@@ -65,6 +65,7 @@ class Turn(BaseModel):
     response: str
     usage: Usage = Field(default_factory=Usage)
     latency_ms: float = 0.0
+    model: str = ""
     error: str | None = None
 
 
@@ -95,21 +96,37 @@ class AgentResponse(BaseModel):
     latency_ms: float = 0.0
 
 
-# Pricing per 1M tokens (input, output) in USD — approximate as of early 2025.
+# Pricing per 1M tokens (input, output) in USD — as of February 2026.
 MODEL_PRICING: dict[str, tuple[float, float]] = {
-    "gpt-4o": (2.50, 10.00),
-    "gpt-4o-mini": (0.15, 0.60),
+    # OpenAI — current generation
+    "gpt-5.2": (1.75, 14.00),
+    "gpt-5": (1.25, 10.00),
+    "gpt-5-mini": (0.25, 2.00),
     "gpt-4.1": (2.00, 8.00),
     "gpt-4.1-mini": (0.40, 1.60),
     "gpt-4.1-nano": (0.10, 0.40),
-    "o3": (10.00, 40.00),
-    "o3-mini": (1.10, 4.40),
     "o4-mini": (1.10, 4.40),
-    "claude-sonnet-4-20250514": (3.00, 15.00),
-    "claude-3-5-haiku-20241022": (0.80, 4.00),
-    "claude-3-5-sonnet-20241022": (3.00, 15.00),
-    "claude-opus-4-20250514": (15.00, 75.00),
+    # Anthropic — current generation
+    "claude-opus-4-6": (5.00, 25.00),
+    "claude-opus-4-5": (5.00, 25.00),
+    "claude-sonnet-4-5": (3.00, 15.00),
+    "claude-haiku-4-5": (1.00, 5.00),
 }
+
+
+def _lookup_pricing(model: str) -> tuple[float, float]:
+    """Look up pricing for a model, falling back to prefix match.
+
+    API responses often include version suffixes (e.g. 'claude-opus-4-5-20251101')
+    that aren't in our pricing table.
+    """
+    if model in MODEL_PRICING:
+        return MODEL_PRICING[model]
+    # Prefix match: try longest-matching key
+    for key in sorted(MODEL_PRICING, key=len, reverse=True):
+        if model.startswith(key):
+            return MODEL_PRICING[key]
+    return (0.0, 0.0)
 
 
 class CostRecord(BaseModel):
@@ -127,7 +144,7 @@ class CostRecord(BaseModel):
 
     @classmethod
     def from_usage(cls, model: str, usage: Usage) -> CostRecord:
-        pricing = MODEL_PRICING.get(model, (0.0, 0.0))
+        pricing = _lookup_pricing(model)
         input_cost = (usage.input_tokens / 1_000_000) * pricing[0]
         output_cost = (usage.output_tokens / 1_000_000) * pricing[1]
         return cls(

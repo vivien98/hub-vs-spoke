@@ -36,7 +36,7 @@ skip_no_keys = pytest.mark.skipif(
 def openai_agent() -> Agent:
     return Agent(
         name="openai-agent",
-        provider=OpenAIProvider(model="gpt-4o-mini"),
+        provider=OpenAIProvider(model="gpt-5-mini"),
         system_prompt="You are a helpful assistant. Be concise.",
         max_tokens=512,
     )
@@ -46,7 +46,7 @@ def openai_agent() -> Agent:
 def anthropic_agent() -> Agent:
     return Agent(
         name="anthropic-agent",
-        provider=AnthropicProvider(model="claude-3-5-haiku-20241022"),
+        provider=AnthropicProvider(model="claude-haiku-4-5"),
         system_prompt="You are a helpful assistant. Be concise.",
         max_tokens=512,
     )

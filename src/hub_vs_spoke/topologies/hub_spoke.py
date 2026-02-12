@@ -61,6 +61,7 @@ class HubSpokeTopology:
                 response=hub_response.content,
                 usage=hub_response.usage,
                 latency_ms=hub_response.latency_ms,
+                model=hub_response.model,
             ))
 
             subtasks = parse_subtasks(hub_response.content, len(self.spokes))
@@ -112,7 +113,50 @@ class HubSpokeTopology:
                 response=hub_synth.content,
                 usage=hub_synth.usage,
                 latency_ms=hub_synth.latency_ms,
+                model=hub_synth.model,
             ))
+
+            # Step 5: Adversarial red-team review
+            if not budget.exceeded(total_tokens, len(turns)):
+                reviewer = self.spokes[-1]
+                critique_prompt = (
+                    "You are a critical reviewer. Examine the following synthesis "
+                    "for contradictions, unsupported claims, logical gaps, and "
+                    "missing edge cases. Be specific and concise.\n\n"
+                    f"Original task: {task.prompt}\n\n"
+                    f"Synthesis to review:\n{hub_synth.content}"
+                )
+                critique = await execute_with_retry(
+                    reviewer, critique_prompt,
+                    from_agent=self.hub.name,
+                    max_retries=0,
+                    turns=turns,
+                    errors=errors,
+                )
+                total_tokens += critique["tokens"]
+
+                # Step 6: Hub revises in light of critique
+                if not budget.exceeded(total_tokens, len(turns)):
+                    revise_prompt = (
+                        "A critical reviewer found the following issues with "
+                        "your synthesis. Revise your answer to address valid "
+                        "concerns. Keep the revision concise.\n\n"
+                        f"Original task: {task.prompt}\n\n"
+                        f"Your synthesis:\n{hub_synth.content}\n\n"
+                        f"Critique:\n{critique['content']}"
+                    )
+                    revision = await self.hub.act(revise_prompt)
+                    total_tokens += revision.usage.total_tokens
+                    turns.append(Turn(
+                        from_agent="red_team",
+                        to_agent=self.hub.name,
+                        message=revise_prompt[:500],
+                        response=revision.content,
+                        usage=revision.usage,
+                        latency_ms=revision.latency_ms,
+                        model=revision.model,
+                    ))
+                    hub_synth = revision  # use revised answer
 
         return build_result(
             self.name, task, hub_synth.content,

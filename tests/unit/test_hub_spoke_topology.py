@@ -15,7 +15,7 @@ async def test_basic_hub_spoke_run(
     mock_hub: MockAgent, mock_spokes: list[MockAgent],
     simple_task: Task, default_budget: TokenBudget,
 ) -> None:
-    """Topology decomposes, delegates, and synthesises with mock agents."""
+    """Topology decomposes, delegates, synthesises, and runs red-team review."""
     topology = HubSpokeTopology(hub=mock_hub, spokes=mock_spokes)
 
     result = await topology.run(simple_task, default_budget)
@@ -24,7 +24,8 @@ async def test_basic_hub_spoke_run(
     assert result.task_id == "test-001"
     assert len(result.final_answer) > 0
     assert result.total_tokens > 0
-    assert len(result.turns) >= 2  # at least decompose + synthesis
+    # At least: decompose + 3 spokes + synthesis + red-team critique + revision
+    assert len(result.turns) >= 4
     assert len(result.errors) == 0
 
 
@@ -93,9 +94,9 @@ async def test_hub_spoke_parse_subtasks_json() -> None:
     task = Task(task_id="parse-test", category=TaskCategory.CODING, prompt="test")
     result = await topology.run(task, TokenBudget())
 
-    # Should have delegated to both spokes
+    # Should have delegated to both spokes + 1 red-team critique
     spoke_turns = [t for t in result.turns if t.to_agent.startswith("s-")]
-    assert len(spoke_turns) == 2
+    assert len(spoke_turns) == 3  # 2 subtasks + 1 red-team review
 
 
 @pytest.mark.asyncio

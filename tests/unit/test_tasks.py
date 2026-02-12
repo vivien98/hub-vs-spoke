@@ -33,27 +33,19 @@ class TestDefaultRegistry:
 
     def test_has_coding_tasks(self) -> None:
         coding = default_registry.by_category(TaskCategory.CODING)
-        assert len(coding) >= 4
+        assert len(coding) >= 3
 
     def test_has_reasoning_tasks(self) -> None:
         reasoning = default_registry.by_category(TaskCategory.REASONING)
-        assert len(reasoning) >= 4
+        assert len(reasoning) >= 3
 
-    def test_has_research_tasks(self) -> None:
-        research = default_registry.by_category(TaskCategory.RESEARCH)
-        assert len(research) >= 3
-
-    def test_has_creative_tasks(self) -> None:
-        creative = default_registry.by_category(TaskCategory.CREATIVE)
-        assert len(creative) >= 3
-
-    def test_has_tool_use_tasks(self) -> None:
-        tool_use = default_registry.by_category(TaskCategory.TOOL_USE)
-        assert len(tool_use) >= 3
+    def test_has_synthesis_tasks(self) -> None:
+        synthesis = default_registry.by_category(TaskCategory.SYNTHESIS)
+        assert len(synthesis) >= 3
 
     def test_total_tasks(self) -> None:
-        # At least 17 tasks total across all categories
-        assert len(default_registry) >= 17
+        # 9 tasks total: 3 coding + 3 reasoning + 3 synthesis
+        assert len(default_registry) >= 9
 
     def test_all_categories_present(self) -> None:
         cats = default_registry.categories()

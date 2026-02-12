@@ -41,7 +41,7 @@ class OpenAIProvider:
                 model=self._model,
                 messages=oai_messages,  # type: ignore[arg-type]
                 temperature=temperature,
-                max_tokens=max_tokens,
+                max_completion_tokens=max_tokens,
                 **kwargs,
             )
 

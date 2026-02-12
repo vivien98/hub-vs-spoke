@@ -11,9 +11,7 @@ from pydantic import BaseModel, Field
 class TaskCategory(StrEnum):
     CODING = "coding"
     REASONING = "reasoning"
-    RESEARCH = "research"
-    CREATIVE = "creative"
-    TOOL_USE = "tool_use"
+    SYNTHESIS = "synthesis"
 
 
 class EvalMethod(StrEnum):

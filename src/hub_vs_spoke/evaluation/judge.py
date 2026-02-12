@@ -37,7 +37,9 @@ class LLMJudge:
         """
         system = (
             "You are an expert evaluator. Score the output on a scale of 1 to 10 "
-            "based on the rubric. Return ONLY valid JSON: "
+            "based on the rubric. Score on substance and accuracy, not length. "
+            "A concise correct answer should outscore a verbose padded one. "
+            "Return ONLY valid JSON: "
             '{"score": <int 1-10>, "reasoning": "<brief explanation>"}'
         )
         user = (

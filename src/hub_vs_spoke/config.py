@@ -22,8 +22,8 @@ class Settings(BaseSettings):
     )
 
     # Default models
-    default_hub_model: str = "claude-sonnet-4-20250514"
-    default_spoke_model: str = "gpt-4o-mini"
+    default_hub_model: str = "claude-opus-4-5"
+    default_spoke_model: str = "gpt-5.2"
 
     # Budget defaults
     token_budget: int = 50_000
@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     repetitions: int = 3
 
     # Judge model for LLM-as-judge evaluation
-    judge_model: str = "gpt-4o"
+    judge_model: str = "gpt-5.2"
 
 
 @functools.lru_cache(maxsize=1)
