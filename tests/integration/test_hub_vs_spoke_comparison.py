@@ -50,11 +50,11 @@ class TestHubVsSpokeComparison:
     async def test_hub_spoke_produces_answer(self) -> None:
         hub = Agent(
             name="hub",
-            provider=OpenAIProvider(model="gpt-4o-mini"),
+            provider=OpenAIProvider(model="gpt-5-mini"),
             system_prompt="You are an orchestrator. Decompose tasks and synthesise results.",
             max_tokens=512,
         )
-        spokes = _make_agents("gpt-4o-mini", 2, "spoke")
+        spokes = _make_agents("gpt-5-mini", 2, "spoke")
         topology = HubSpokeTopology(hub=hub, spokes=spokes)
 
         budget = TokenBudget(max_total_tokens=10_000, max_turns=10)
@@ -66,7 +66,7 @@ class TestHubVsSpokeComparison:
 
     @pytest.mark.asyncio
     async def test_spoke_spoke_produces_answer(self) -> None:
-        peers = _make_agents("gpt-4o-mini", 3, "peer")
+        peers = _make_agents("gpt-5-mini", 3, "peer")
         topology = SpokeSpokeTopology(peers=peers)
 
         budget = TokenBudget(max_total_tokens=10_000, max_turns=10)
@@ -82,15 +82,15 @@ class TestHubVsSpokeComparison:
         # Hub-spoke
         hub = Agent(
             name="hub",
-            provider=OpenAIProvider(model="gpt-4o-mini"),
+            provider=OpenAIProvider(model="gpt-5-mini"),
             system_prompt="You are an orchestrator. Decompose tasks and synthesise results.",
             max_tokens=512,
         )
-        hs_spokes = _make_agents("gpt-4o-mini", 2, "hs-spoke")
+        hs_spokes = _make_agents("gpt-5-mini", 2, "hs-spoke")
         hs_topology = HubSpokeTopology(hub=hub, spokes=hs_spokes)
 
         # Spoke-spoke
-        ss_peers = _make_agents("gpt-4o-mini", 3, "ss-peer")
+        ss_peers = _make_agents("gpt-5-mini", 3, "ss-peer")
         ss_topology = SpokeSpokeTopology(peers=ss_peers)
 
         budget = TokenBudget(max_total_tokens=15_000, max_turns=12)

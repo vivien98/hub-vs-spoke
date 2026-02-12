@@ -188,9 +188,9 @@ class TestFunctionCallCheckStructured:
 class TestCostCalculator:
     def test_cost_from_usage_known_model(self) -> None:
         usage = Usage(input_tokens=1_000_000, output_tokens=1_000_000)
-        cost = CostCalculator.cost_from_usage("gpt-4o", usage)
-        # gpt-4o: $2.50 input + $10.00 output per 1M tokens = $12.50
-        assert abs(cost - 12.50) < 0.01
+        cost = CostCalculator.cost_from_usage("gpt-5.2", usage)
+        # gpt-5.2: $1.75 input + $14.00 output per 1M tokens = $15.75
+        assert abs(cost - 15.75) < 0.01
 
     def test_cost_from_usage_unknown_model(self) -> None:
         usage = Usage(input_tokens=1000, output_tokens=1000)
@@ -199,17 +199,17 @@ class TestCostCalculator:
 
     def test_available_models(self) -> None:
         models = CostCalculator.available_models()
-        assert "gpt-4o" in models
-        assert "claude-sonnet-4-20250514" in models
+        assert "gpt-5.2" in models
+        assert "claude-sonnet-4-5" in models
 
 
 class TestCostRecord:
     def test_from_usage(self) -> None:
         usage = Usage(input_tokens=500_000, output_tokens=100_000)
-        record = CostRecord.from_usage("gpt-4o-mini", usage)
-        # gpt-4o-mini: $0.15/1M input, $0.60/1M output
-        expected_input = 0.5 * 0.15
-        expected_output = 0.1 * 0.60
+        record = CostRecord.from_usage("gpt-5-mini", usage)
+        # gpt-5-mini: $0.25/1M input, $2.00/1M output
+        expected_input = 0.5 * 0.25
+        expected_output = 0.1 * 2.00
         assert abs(record.input_cost_usd - expected_input) < 0.001
         assert abs(record.output_cost_usd - expected_output) < 0.001
         assert abs(record.total_cost_usd - (expected_input + expected_output)) < 0.001

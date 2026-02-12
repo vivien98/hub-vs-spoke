@@ -1,0 +1,4 @@
+config,topology_type,runs,pass,rate,avg_score,total_cost,avg_tokens,avg_time_ms
+agent-economy,market,9,9,1.0,8.78,0.413561,3167.0,88807.0
+opus-hub+gpt5-spokes,hub-spoke,9,7,0.778,7.11,1.001753,11559.0,69675.0
+solo-opus-4.6,solo,9,6,0.667,7.22,0.31055,1558.0,28778.0

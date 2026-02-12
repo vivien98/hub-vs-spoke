@@ -66,6 +66,7 @@ class SpokeSpokeTopology:
                 response=coord_response.content,
                 usage=coord_response.usage,
                 latency_ms=coord_response.latency_ms,
+                model=coord_response.model,
             ))
 
             subtasks = parse_subtasks(coord_response.content, len(self.peers))
@@ -120,6 +121,7 @@ class SpokeSpokeTopology:
                         response=review_resp.content,
                         usage=review_resp.usage,
                         latency_ms=review_resp.latency_ms,
+                        model=review_resp.model,
                     ))
                 except Exception as exc:
                     errors.append(f"Review step failed: {exc}")
@@ -149,6 +151,7 @@ class SpokeSpokeTopology:
                 response=synth_response.content,
                 usage=synth_response.usage,
                 latency_ms=synth_response.latency_ms,
+                model=synth_response.model,
             ))
 
         return build_result(

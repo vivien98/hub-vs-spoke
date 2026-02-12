@@ -8,7 +8,7 @@ from typing import Any
 import structlog
 
 from hub_vs_spoke.tasks.base import Task
-from hub_vs_spoke.types import AgentResponse, Timer, TopologyResult, Turn
+from hub_vs_spoke.types import AgentResponse, CostRecord, Timer, TopologyResult, Turn
 
 logger = structlog.get_logger()
 
@@ -68,6 +68,7 @@ async def execute_with_retry(
                 response=response.content,
                 usage=response.usage,
                 latency_ms=response.latency_ms,
+                model=response.model,
             ))
             return {"content": response.content, "tokens": response.usage.total_tokens}
         except Exception as exc:
@@ -97,13 +98,19 @@ def build_result(
     errors: list[str],
     timer: Timer,
 ) -> TopologyResult:
-    """Construct a TopologyResult from run data."""
+    """Construct a TopologyResult from run data, including cost from per-turn usage."""
+    total_cost = sum(
+        CostRecord.from_usage(t.model, t.usage).total_cost_usd
+        for t in turns
+        if t.model
+    )
     return TopologyResult(
         topology_name=topology_name,
         task_id=task.task_id,
         final_answer=final_answer,
         turns=turns,
         total_tokens=total_tokens,
+        total_cost_usd=total_cost,
         errors=errors,
         wall_time_ms=timer.elapsed_ms,
     )

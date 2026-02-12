@@ -14,6 +14,7 @@ dependencies = [
     "pydantic-settings>=2.3.0",
     "structlog>=24.1.0",
     "python-dotenv>=1.0.0",
+    "agent-economy @ git+https://github.com/strangeloopcanon/agent-economy.git@30f0b42",
 ]
 
 [project.optional-dependencies]
