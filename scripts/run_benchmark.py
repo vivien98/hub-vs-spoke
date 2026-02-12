@@ -38,8 +38,12 @@ from hub_vs_spoke.types import TokenBudget, TopologyResult
 
 logger = structlog.get_logger()
 
-# Shadow tasks: one per category for counterfactual analysis.
-SHADOW_TASK_IDS = {"coding-002", "reasoning-002", "synthesis-001"}
+# Shadow tasks: mix of original + hard tasks for counterfactual analysis.
+SHADOW_TASK_IDS = {
+    "coding-002", "coding-005",
+    "reasoning-004",
+    "synthesis-001", "synthesis-005",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -586,9 +590,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run hub-vs-spoke benchmark matrix")
     parser.add_argument("--category", type=str, default=None,
                         help="Run only this task category")
-    parser.add_argument("--reps", type=int, default=1,
+    parser.add_argument("--reps", type=int, default=3,
                         help="Repetitions per configuration")
-    parser.add_argument("--budget-tokens", type=int, default=20_000,
+    parser.add_argument("--budget-tokens", type=int, default=30_000,
                         help="Max tokens per run")
     parser.add_argument("--budget-turns", type=int, default=15,
                         help="Max turns per run")

@@ -149,13 +149,25 @@ def print_by_category(rows: list[dict[str, Any]]) -> None:
 
 
 def print_head_to_head(rows: list[dict[str, Any]]) -> None:
-    """Per-task comparison across all 4 conditions."""
-    _header("HEAD-TO-HEAD (per task, all conditions)")
+    """Per-task comparison across conditions, averaged over reps."""
+    _header("HEAD-TO-HEAD (per task, averaged over reps)")
 
     configs = sorted({r["config_label"] for r in rows})
-    by_task: dict[str, dict[str, float]] = {}
+
+    # Accumulate all scores per (task, config), then average.
+    task_cfg_scores: dict[str, dict[str, list[float]]] = {}
     for r in rows:
-        by_task.setdefault(r["task_id"], {})[r["config_label"]] = r.get("eval_score", 0.0)
+        tid = r["task_id"]
+        cfg = r["config_label"]
+        task_cfg_scores.setdefault(tid, {}).setdefault(cfg, []).append(
+            r.get("eval_score", 0.0),
+        )
+
+    by_task: dict[str, dict[str, float]] = {}
+    for tid, cfg_map in task_cfg_scores.items():
+        by_task[tid] = {
+            cfg: sum(scores) / len(scores) for cfg, scores in cfg_map.items()
+        }
 
     # Header
     col_w = max(12, *(len(c) for c in configs))
@@ -184,6 +196,45 @@ def print_head_to_head(rows: list[dict[str, Any]]) -> None:
 
     print("-" * len(hdr))
     print("Wins: " + "  ".join(f"{c}={wins[c]}" for c in configs))
+
+
+# ---------------------------------------------------------------------------
+# Difficulty breakdown
+# ---------------------------------------------------------------------------
+
+# Tasks ending in -004/-005 are the new hard tasks; -003 and synthesis are also hard.
+_HARD_TASKS = {
+    "coding-004", "coding-005",
+    "reasoning-003", "reasoning-004", "reasoning-005",
+    "synthesis-001", "synthesis-002", "synthesis-003", "synthesis-004", "synthesis-005",
+}
+
+
+def _difficulty(task_id: str) -> str:
+    return "hard" if task_id in _HARD_TASKS else "medium"
+
+
+def print_by_difficulty(rows: list[dict[str, Any]]) -> None:
+    """Show how each config performs on medium vs hard tasks."""
+    _header("BY DIFFICULTY x CONFIG")
+    configs = sorted({r["config_label"] for r in rows})
+
+    fmt = "{:<10} {:<25} {:>5} {:>5} {:>6} {:>7} {:>9}"
+    print(fmt.format("Difficulty", "Config", "Runs", "Pass", "Rate", "AvgScr", "Cost$"))
+    print("-" * W)
+    for diff in ("medium", "hard"):
+        for cfg in configs:
+            subset = [
+                r for r in rows
+                if _difficulty(r["task_id"]) == diff and r["config_label"] == cfg
+            ]
+            if not subset:
+                continue
+            a = _agg(subset)
+            print(fmt.format(
+                diff, cfg, a["runs"], a["pass"], f"{a['rate']:.0%}",
+                f"{a['avg_score']:.1f}", f"{a['total_cost']:.4f}",
+            ))
 
 
 # ---------------------------------------------------------------------------
@@ -217,8 +268,9 @@ def _bootstrap_ci(
 
 def print_bootstrap_cis(rows: list[dict[str, Any]]) -> None:
     """Bootstrap 95% CIs for mean eval_score per config."""
-    _header("BOOTSTRAP 95% CONFIDENCE INTERVALS (N=9, honest about width)")
     groups = _group_by(rows, "config_label")
+    n_per = len(next(iter(groups.values()), []))
+    _header(f"BOOTSTRAP 95% CONFIDENCE INTERVALS (N={n_per} per config)")
 
     fmt = "{:<30} {:>7} {:>7} {:>7} {:>5}"
     print(fmt.format("Config", "Mean", "CI Low", "CI High", "N"))
@@ -529,6 +581,9 @@ def main() -> None:
     print_by_config(rows)
     print_by_category(rows)
     print_head_to_head(rows)
+
+    # Difficulty breakdown
+    print_by_difficulty(rows)
 
     # New analyses
     print_bootstrap_cis(rows)

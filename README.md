@@ -2,7 +2,7 @@
 
 When you have access to multiple LLMs, how should you coordinate them? This repo tests three strategies on the same set of tasks and measures what you get for your money.
 
-## Results (Feb 2026)
+## Results (Feb 2026, v2)
 
 ```mermaid
 ---
@@ -10,49 +10,89 @@ config:
   theme: default
 ---
 xychart-beta
-    title "Average Score (out of 10)"
+    title "Average Score by Topology (out of 10)"
     x-axis ["Agent Economy", "Solo (Opus 4.6)", "Hub-Spoke"]
     y-axis "Score" 0 --> 10
-    bar [8.8, 7.2, 7.1]
+    bar [7.2, 7.2, 6.7]
 ```
 
-| Condition | Avg Score | Pass Rate | Cost | Score per Dollar |
+| Condition | Avg Score | Pass Rate | Total Cost | Score/$ |
 |---|---|---|---|---|
-| **Agent Economy** | **8.8** | **9/9** | $0.41 | 21.2 |
-| Solo (Opus 4.6) | 7.2 | 6/9 | $0.31 | 23.3 |
-| Hub-Spoke | 7.1 | 7/9 | $1.00 | 7.1 |
+| **Agent Economy** | **7.2** | **76%** (34/45) | $1.34 | **5.4** |
+| Solo (Opus 4.6) | 7.2 | 73% (33/45) | $1.69 | 4.2 |
+| Hub-Spoke | 6.7 | 67% (30/45) | $5.33 | 1.3 |
 
-The competitive market beat both the hierarchical setup and the best single model. Hub-spoke cost 2.4x more than the market for a lower score. The solo baseline was cheapest but least consistent.
+15 tasks (5 coding, 5 reasoning, 5 synthesis), 3 reps each, 45 scored runs per condition. Bootstrap 95% CIs: market [6.1, 8.2], solo [6.3, 8.0], hub-spoke [5.8, 7.5]. The intervals overlap, so this is still directional — but the pattern is consistent.
+
+The competitive market matched the best single model on quality and cost 21% less. Hub-spoke cost 4x more than either for a lower score.
+
+### What the categories reveal
+
+The headline averages hide real differences by task type:
+
+| Category | Agent Economy | Solo (Opus 4.6) | Hub-Spoke |
+|---|---|---|---|
+| **Coding** | 6.7 | **8.4** | 7.9 |
+| **Reasoning** | **7.1** | 5.1 | 5.2 |
+| **Synthesis** | 7.7 | **8.1** | 6.9 |
+
+Solo Opus dominates coding — coordinating multiple models adds noise without helping. The market dominates reasoning, where it scored 7.1 versus 5.1 for solo and 5.2 for hub-spoke. This held on both medium and hard reasoning tasks. Synthesis is close, with solo slightly ahead.
+
+### Hard vs medium tasks
+
+| Difficulty | Agent Economy | Solo (Opus 4.6) | Hub-Spoke |
+|---|---|---|---|
+| Medium (5 tasks) | 6.9 | 6.7 | 6.7 |
+| Hard (10 tasks) | 7.3 | 7.4 | 6.6 |
+
+On hard tasks, the market and solo stayed level while hub-spoke dropped further. The market's reasoning advantage persisted on hard tasks; the solo's coding advantage persisted too.
 
 <details>
-<summary>Per-task scores</summary>
+<summary>Per-task head-to-head (averaged over 3 reps)</summary>
 
-| Task | Agent Economy | Hub-Spoke | Solo |
-|---|---|---|---|
-| coding-001 (interval store) | 8 | 9 | **10** |
-| coding-002 (debug sliding window) | **10** | **10** | **10** |
-| coding-003 (refactor monolith) | 7 | **9** | 6 |
-| reasoning-001 (combinatorics) | **10** | 0 | 0 |
-| reasoning-002 (constraint scheduling) | **10** | **10** | 9 |
-| reasoning-003 (causal chain) | 9 | 9 | 9 |
-| synthesis-001 (distributed consistency) | **9** | 8 | 6 |
-| synthesis-002 (monorepo debate) | **9** | 7 | 7 |
-| synthesis-003 (multi-audience Raft) | 7 | 2 | **8** |
+| Task | Agent Economy | Hub-Spoke | Solo | Best |
+|---|---|---|---|---|
+| coding-001 | 6.3 | 8.3 | **9.7** | solo |
+| coding-002 | **10.0** | 9.7 | 9.3 | tie |
+| coding-003 | 1.3 | **6.0** | 5.3 | hub-spoke |
+| coding-004 | 9.7 | 9.0 | **10.0** | tie |
+| coding-005 | 6.0 | 6.7 | **7.7** | solo |
+| reasoning-001 | **10.0** | 0.0 | 0.0 | market |
+| reasoning-002 | 6.7 | **9.7** | 9.0 | hub-spoke |
+| reasoning-003 | 9.0 | 9.0 | **9.3** | tie |
+| reasoning-004 | 3.0 | **4.0** | 3.3 | hub-spoke |
+| reasoning-005 | **7.0** | 3.3 | 3.7 | market |
+| synthesis-001 | **9.0** | 8.3 | 7.7 | market |
+| synthesis-002 | **9.0** | 7.3 | 8.3 | market |
+| synthesis-003 | **8.7** | 4.3 | 8.3 | tie |
+| synthesis-004 | 6.0 | 6.0 | **7.0** | solo |
+| synthesis-005 | 6.0 | 8.3 | **9.0** | solo |
 
-The market's weakest score was a 7. Hub-spoke and solo both had at least one 0.
+**Wins**: Agent Economy 4, Solo 4, Hub-Spoke 3 (4 ties)
+
+reasoning-001 is the exact-match probability question (10/33). Only the market got it right — both solo and hub-spoke failed all 3 reps. reasoning-004 (logic grid puzzle) was hard for everyone: nobody averaged above 4.
+
+</details>
+
+<details>
+<summary>Market internals: routing and reputation</summary>
+
+**Who won the bids?** GPT-5.2 dominated with 28 task wins across the 3 sessions, Opus 4.6 took 11, GPT-5-mini never won a single task. The market effectively learned that mini was unreliable and stopped routing to it.
+
+**Final reputations** (after 15-task sessions): GPT-5.2 = 1.14, Opus 4.6 = 1.18, GPT-5-mini = 1.00. Despite GPT-5.2 winning more tasks, Opus 4.6 maintained slightly higher reputation — its wins were higher-quality.
+
+**Routing accuracy** (5 shadow tasks x 3 reps = 15 checks): 12/15 (80%) of market routing decisions matched the oracle pick (best model determined by running all three). The 3 misses were on reasoning-004 (hard logic puzzle, rep 0) and two cases where the winner was "unknown" (market failed to fill the task).
 
 </details>
 
 <details>
 <summary>Shadow counterfactual analysis</summary>
 
-On 3 tasks (one per category), all three market workers independently answered the same question after the market run. This lets us check whether the market's routing was optimal.
+On 5 shadow tasks per rep, all three market workers independently answered the same question. This checks whether the market routed to the best model.
 
-- **coding-002**: Market picked GPT-5.2 (score 9), but Opus 4.6 would have scored 10. Regret: 1 point.
-- **reasoning-002**: Market picked Opus 4.6 (score 10). Correct — best possible pick.
-- **synthesis-001**: Market picked Opus 4.6 (score 9), tied with GPT-5.2 (score 9). No regret.
+Most tasks showed no regret — the market's pick matched or tied the oracle. The notable miss was reasoning-004 rep 0: the market picked Opus 4.6 (score 3) when GPT-5.2 would have scored 9. On all other reasoning/synthesis shadows, routing was optimal.
 
-Routing accuracy: 2/3 optimal. The one miss cost a single point.
+Parallel-3-pick baseline (run all three, pick best): on 12/15 shadow runs the market matched it. The 3 misses would have cost $0.15 extra per task to catch by running all models.
 
 </details>
 
@@ -67,34 +107,32 @@ One model answers the task directly. No decomposition, no coordination, no overh
 An orchestrator (Opus 4.5) decomposes the task, assigns subtasks to three GPT-5.2 workers, synthesises their outputs, then one worker red-teams the synthesis and the hub revises. About 7 LLM calls per task.
 
 ```
-         ┌─────────┐
-    ┌───►│ Spoke 0 │───┐
-    │    └─────────┘   │
-    │    ┌─────────┐   │    ┌──────────┐    ┌────────┐
-────┼───►│   Hub   │◄──┼───►│Red-team  │───►│Revision│
-    │    └─────────┘   │    └──────────┘    └────────┘
-    │    ┌─────────┐   │
-    └───►│ Spoke 2 │───┘
-         └─────────┘
+         +----------+
+    +----> Spoke 0  +---+
+    |    +----------+   |
+    |    +----------+   |    +---------+    +--------+
+----+---->   Hub    <---+---->Red-team +---->Revision|
+    |    +----------+   |    +---------+    +--------+
+    |    +----------+   |
+    +----> Spoke 2  +---+
+         +----------+
 ```
 
 ### Agent Economy
 
-Three models (GPT-5.2, Opus 4.6, GPT-5-mini) compete through [agent-economy](https://github.com/strangeloopcanon/agent-economy)'s clearinghouse. For each task, all three bid; the engine picks a winner based on bid confidence and reputation; the winner produces an answer; an LLM judge verifies it. Reputation develops across the full 9-task session — early failures reduce a model's chances of winning later tasks.
+Three models (GPT-5.2, Opus 4.6, GPT-5-mini) compete through [agent-economy](https://github.com/strangeloopcanon/agent-economy)'s clearinghouse. For each task, all three bid; the engine picks a winner based on bid confidence and reputation; the winner produces an answer; an LLM judge verifies it. Reputation develops across the full 15-task session — early failures reduce a model's chances of winning later tasks.
 
 ```
-    ┌─────────┐   bid    ┌──────────────┐   assign   ┌────────┐
-    │ GPT-5.2 │─────────►│              │────────────►│ Winner │
-    └─────────┘          │ Clearinghouse│             └───┬────┘
-    ┌─────────┐   bid    │   Engine     │                 │
-    │Opus 4.6 │─────────►│              │    verify       ▼
-    └─────────┘          │  reputation  │◄────────── ┌────────┐
-    ┌─────────┐   bid    │  tracking    │            │ Judge  │
-    │GPT-mini │─────────►│              │            └────────┘
-    └─────────┘          └──────────────┘
+    +----------+   bid    +----------------+   assign   +--------+
+    | GPT-5.2  +--------->|                +------------>| Winner |
+    +----------+          | Clearinghouse  |             +---+----+
+    +----------+   bid    |   Engine       |                 |
+    |Opus 4.6  +--------->|                |    verify       v
+    +----------+          |  reputation    |<-----------+--------+
+    +----------+   bid    |  tracking      |            | Judge  |
+    |GPT-mini  +--------->|                |            +--------+
+    +----------+          +----------------+
 ```
-
-In this run, Opus 4.6 won 7 of 9 tasks. GPT-5-mini never won. Reputation at session end: Opus 4.6 = 1.02, GPT-5.2 = 0.72, GPT-5-mini = 1.00.
 
 ## Setup
 
@@ -115,11 +153,11 @@ cp .env.example .env
 # Preview the matrix without calling any APIs
 python scripts/run_benchmark.py --dry-run
 
-# Full run: 3 conditions × 9 tasks + shadow counterfactuals
-python scripts/run_benchmark.py --output results/yolo_run.jsonl
+# Full run: 3 conditions x 15 tasks x 3 reps + shadow counterfactuals
+python scripts/run_benchmark.py --output results/hard_run.jsonl
 
 # Analyse results
-python scripts/analyse_results.py results/yolo_run.jsonl --csv results/summary.csv
+python scripts/analyse_results.py results/hard_run.jsonl --csv results/hard_summary.csv
 
 # Unit tests (no API keys needed)
 pytest tests/unit/ -v
@@ -135,8 +173,8 @@ python scripts/run_benchmark.py --category coding
 # Single config
 python scripts/run_benchmark.py --config agent-economy
 
-# Multiple reps
-python scripts/run_benchmark.py --reps 3
+# Change reps (default: 3)
+python scripts/run_benchmark.py --reps 5
 
 # Adjust budget
 python scripts/run_benchmark.py --budget-tokens 30000 --budget-turns 20
@@ -146,23 +184,23 @@ python scripts/run_benchmark.py --budget-tokens 30000 --budget-turns 20
 
 ## Caveats
 
-Nine tasks is a pilot. Bootstrap 95% CIs: market [8.0, 9.4], solo [5.1, 8.9], hub-spoke [4.8, 9.1]. The intervals overlap — this is directional evidence, not proof. The judge (GPT-5.2) also participates as a market worker. The market's dominance partly reflects Opus 4.6 winning most bids — a task set requiring genuine specialisation could shift things.
+The bootstrap CIs overlap across all three conditions. This is directional evidence, not proof of superiority. The judge (GPT-5.2) also participates as a market worker, which could introduce bias. GPT-5-mini never won a market bid, so the "three-model market" was effectively a two-model contest. On reasoning-001, the exact-match task, only the market got the right answer — this single task accounts for much of the market's reasoning advantage.
 
 ## Next steps
 
-These are concrete things to do next, roughly in priority order. Each is self-contained — pick one and run with it.
+Concrete things to build on these results, roughly in priority order.
 
-1. **Statistical power.** Run 3–5 reps of the current setup. With 27–45 observations per condition instead of 9, the bootstrap CIs tighten enough to make real claims. Cost: ~$5–10. Change `--reps 3` and go.
+1. **Judge independence.** GPT-5.2 serves as both a market worker and the evaluation judge. Replace the judge with a model that doesn't participate (e.g. Claude Sonnet 4.5 or a separate instance with a different system prompt). Then check whether scores change.
 
-2. **Judge independence.** GPT-5.2 currently serves as both a market worker and the evaluation judge. Replace the judge with a model that doesn't participate (e.g. Claude Sonnet 4.5 or a separate GPT-5.2 instance with a different system prompt). Then check whether scores change — if they do, we had a bias.
+2. **Drop GPT-5-mini, add a specialist.** Mini never won a single bid across 45 market tasks. Replace it with a model that's actually competitive, or one with known domain strengths (e.g. a code-specialist model) to test whether the market can learn to route domain tasks to the right specialist.
 
-3. **Harder tasks.** The current 9 tasks are medium-to-hard but the market scored 7+ on all of them. Add tasks where single models reliably fail: multi-step code generation with test suites, long-context synthesis (10k+ word inputs), or tasks requiring domain knowledge that varies by model. The interesting question is whether the market routes hard tasks better than easy ones.
+3. **Longer sessions.** Run 30-50 tasks per market session. The reputation mechanism barely warms up in 15 tasks. With 50, you can plot reputation trajectory over time and see whether it converges to meaningful routing signals.
 
-4. **Structured bids.** Right now agent-economy's bidder generates a single confidence score. Extend it to structured bids: `{p_success, expected_tokens, plan, risks}`. Then track calibration — does stated confidence predict actual performance? This is the data needed to know if market-based routing can be trusted.
+4. **Structured bids.** Extend agent-economy's bidder to produce structured bids: `{p_success, expected_tokens, plan, risks}`. Track calibration — does stated confidence predict actual performance? This is the data needed to know if market-based routing can be trusted beyond brute-force reputation.
 
-5. **Longer sessions.** Run 30–50 tasks in one market session instead of 9. The reputation mechanism is the market's main advantage over simple routing, but 9 tasks barely exercises it. With 50 tasks, you can plot reputation trajectory over time and see whether it converges to something meaningful.
+5. **Cost-aware scoring.** Add a condition where the market uses `score = quality / cost` instead of pure quality. See if this routes cheap tasks to cheaper models while preserving quality on hard tasks.
 
-6. **Cost-optimised routing.** Add a condition where the market uses a cost-aware scoring function: `score = quality / cost` instead of pure quality. See if this routes cheap tasks to GPT-5-mini (which currently never wins) while preserving quality on hard tasks.
+6. **Pairwise judge evaluation.** Add a pairwise comparison mode to the judge (present two answers anonymously, ask which is better) alongside the current absolute scoring. Compare whether pairwise rankings agree with absolute scores.
 
 <details>
 <summary>Project structure</summary>
@@ -186,9 +224,9 @@ src/hub_vs_spoke/
 │   └── market.py           Agent-economy clearinghouse wrapper
 ├── tasks/
 │   ├── base.py             Task model, registry, eval methods
-│   ├── coding.py           3 coding tasks (implement, debug, refactor)
-│   ├── reasoning.py        3 reasoning tasks (probability, scheduling, causal)
-│   └── synthesis.py        3 synthesis tasks (comparison, debate, multi-audience)
+│   ├── coding.py           5 coding tasks (implement, debug, refactor, LRU cache, async bugs)
+│   ├── reasoning.py        5 reasoning tasks (probability, scheduling, causal, logic grid, magic square)
+│   └── synthesis.py        5 synthesis tasks (consistency, debate, multi-audience, EHR architecture, microservices critique)
 └── evaluation/
     ├── judge.py            LLM-as-judge (absolute + pairwise)
     ├── deterministic.py    Exact match, regex, code execution, function-call check
@@ -197,10 +235,10 @@ src/hub_vs_spoke/
 
 scripts/
 ├── run_benchmark.py        Benchmark runner (solo, hub-spoke, market + shadows)
-└── analyse_results.py      Analysis: calibration, routing accuracy, bootstrap CIs
+└── analyse_results.py      Analysis: calibration, routing accuracy, bootstrap CIs, difficulty breakdown
 
 tests/
-├── unit/                   68 tests, no network, < 2 seconds
+├── unit/                   79 tests, no network, < 3 seconds
 └── integration/            Pipeline + live API tests
 ```
 
@@ -213,7 +251,7 @@ Create a task in the relevant file (e.g. `src/hub_vs_spoke/tasks/coding.py`):
 
 ```python
 Task(
-    task_id="coding-004",
+    task_id="coding-006",
     category=TaskCategory.CODING,
     prompt="Your task description.",
     eval_method=EvalMethod.LLM_JUDGE,
