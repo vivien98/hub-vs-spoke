@@ -1,304 +1,227 @@
-# Hub vs Spoke — LLM Topology Test Harness
+# Hub vs Spoke
 
-When you wire multiple LLM agents together, the coordination pattern matters. This
-harness runs the same set of tasks through two topologies — hub-and-spoke and
-spoke-and-spoke — then measures how each performs on output quality, token cost, and
-fault tolerance.
+When you have access to multiple LLMs, how should you coordinate them? This repo tests three strategies on the same set of tasks and measures what you get for your money.
 
-The point is to answer a practical question: **does a central orchestrator produce
-better results than a flat peer mesh, and at what cost?**
+## Results (Feb 2026)
 
-## The two topologies
-
-### Hub-and-spoke
-
-One strong model acts as the orchestrator. It receives the task, breaks it into
-subtasks, farms each out to cheaper "spoke" models, collects the results, and
-synthesises a final answer. All communication flows through the hub.
-
-```
-              ┌────────┐
-         ┌───►│Spoke A │───┐
-         │    └────────┘   │
-┌─────┐  │   ┌────────┐   │  ┌─────┐
-│User │──┼──►│  Hub   │◄──┼──│Final│
-└─────┘  │   └────────┘   │  └─────┘
-         │    ┌────────┐   │
-         └───►│Spoke B │───┘
-              └────────┘
+```mermaid
+---
+config:
+  theme: default
+---
+xychart-beta
+    title "Average Score (out of 10)"
+    x-axis ["Agent Economy", "Solo (Opus 4.6)", "Hub-Spoke"]
+    y-axis "Score" 0 --> 10
+    bar [8.8, 7.2, 7.1]
 ```
 
-Step by step:
+| Condition | Avg Score | Pass Rate | Cost | Score per Dollar |
+|---|---|---|---|---|
+| **Agent Economy** | **8.8** | **9/9** | $0.41 | 21.2 |
+| Solo (Opus 4.6) | 7.2 | 6/9 | $0.31 | 23.3 |
+| Hub-Spoke | 7.1 | 7/9 | $1.00 | 7.1 |
 
-1. **Decompose** — Hub receives the task and returns a JSON array of subtask strings.
-2. **Delegate** — Each subtask is assigned to a spoke (round-robin). Failed spokes are
-   retried up to `max_retries` times before recording a failure.
-3. **Synthesise** — Hub receives all spoke outputs and produces a single coherent answer.
+The competitive market beat both the hierarchical setup and the best single model. Hub-spoke cost 2.4x more than the market for a lower score. The solo baseline was cheapest but least consistent.
 
-The tradeoff: the hub is a single point of failure, but it keeps coherence high because
-one model sees the full picture.
+<details>
+<summary>Per-task scores</summary>
 
-### Spoke-and-spoke (peer mesh)
-
-No permanent orchestrator. A group of peer-tier models self-organise: the first peer
-decomposes the task, all peers execute subtasks, a middle peer reviews outputs for
-consistency, and the last peer synthesises.
-
-```
-    ┌─────────┐     ┌─────────┐
-    │ Peer 0  │◄───►│ Peer 1  │
-    │(coord)  │     │(review) │
-    └────┬────┘     └────┬────┘
-         │               │
-         └──────┬────────┘
-                │
-          ┌─────┴─────┐
-          │  Peer 2   │
-          │(synthesise)│
-          └───────────┘
-```
-
-Step by step:
-
-1. **Decompose** — Peer 0 (coordinator) breaks the task into N subtasks, one per peer.
-2. **Execute** — Each peer works on its subtask. Failures are retried, then recorded.
-3. **Review** — The middle peer cross-checks all outputs and flags inconsistencies.
-4. **Synthesise** — The last peer merges outputs into a final answer.
-
-The tradeoff: no single point of failure (the coordinator role is lightweight and can
-in principle be reassigned), but coherence depends on the review and synthesis steps
-doing their jobs well.
-
-## What gets measured
-
-Every topology run records:
-
-| Metric | How it's captured |
-|---|---|
-| **Token usage** | Input + output tokens per turn, summed per run |
-| **Cost (USD)** | Tokens mapped to per-model pricing tables (OpenAI and Anthropic rates) |
-| **Wall time** | End-to-end milliseconds for the full run |
-| **Turn count** | Number of agent-to-agent exchanges |
-| **Error count** | Exceptions caught during spoke/peer execution |
-| **Final answer** | The synthesised output text |
-
-Evaluation happens through four methods, chosen per task:
-
-- **Exact match** — normalised substring check against a known answer
-- **Regex match** — pattern match for structured answers
-- **Code execution** — run generated code in a subprocess, check exit code
-- **LLM-as-judge** — a separate model scores output quality (1–10 absolute, or
-  pairwise A-vs-B comparison)
-
-## Benchmark task categories
-
-There are 17 tasks across five categories:
-
-| Category | # Tasks | Examples |
-|---|---|---|
-| **Coding** | 4 | Merge sorted lists, debug off-by-one, refactor opaque function, implement LRU cache |
-| **Reasoning** | 4 | Fencing optimisation, missing-dollar puzzle, 12-ball weighing, constraint seating |
-| **Research** | 3 | DB connection pooling comparison, distributed topology tradeoffs, LLM alignment methods |
-| **Creative** | 3 | Short story (AI consciousness), technical blog intro, architecture debate dialogue |
-| **Tool use** | 3 | Multi-tool orchestration, sequential data-dependent calls, caching strategy |
-
-Each task specifies its evaluation method. Coding tasks use code execution where
-possible; reasoning uses exact match or LLM judge; creative and research use LLM judge;
-tool-use checks that the right function calls appear in the right order.
-
-## Default benchmark configurations
-
-The benchmark runner tests five configurations out of the box:
-
-| Label | Topology | Hub model | Spoke/peer models |
+| Task | Agent Economy | Hub-Spoke | Solo |
 |---|---|---|---|
-| `claude-hub+gpt-spokes` | Hub-spoke | Claude Sonnet 4 | 3 × GPT-4o-mini |
-| `gpt-hub+claude-spokes` | Hub-spoke | GPT-4o | 3 × Claude 3.5 Haiku |
-| `gpt-peers` | Spoke-spoke | — | 3 × GPT-4o |
-| `claude-peers` | Spoke-spoke | — | 3 × Claude Sonnet 4 |
-| `mixed-peers` | Spoke-spoke | — | GPT-4o + Claude Sonnet 4 + GPT-4o-mini |
+| coding-001 (interval store) | 8 | 9 | **10** |
+| coding-002 (debug sliding window) | **10** | **10** | **10** |
+| coding-003 (refactor monolith) | 7 | **9** | 6 |
+| reasoning-001 (combinatorics) | **10** | 0 | 0 |
+| reasoning-002 (constraint scheduling) | **10** | **10** | 9 |
+| reasoning-003 (causal chain) | 9 | 9 | 9 |
+| synthesis-001 (distributed consistency) | **9** | 8 | 6 |
+| synthesis-002 (monorepo debate) | **9** | 7 | 7 |
+| synthesis-003 (multi-audience Raft) | 7 | 2 | **8** |
 
-This gives you cross-provider comparisons (OpenAI hub with Anthropic workers and vice
-versa), same-provider peer meshes, and a mixed-provider mesh.
+The market's weakest score was a 7. Hub-spoke and solo both had at least one 0.
+
+</details>
+
+<details>
+<summary>Shadow counterfactual analysis</summary>
+
+On 3 tasks (one per category), all three market workers independently answered the same question after the market run. This lets us check whether the market's routing was optimal.
+
+- **coding-002**: Market picked GPT-5.2 (score 9), but Opus 4.6 would have scored 10. Regret: 1 point.
+- **reasoning-002**: Market picked Opus 4.6 (score 10). Correct — best possible pick.
+- **synthesis-001**: Market picked Opus 4.6 (score 9), tied with GPT-5.2 (score 9). No regret.
+
+Routing accuracy: 2/3 optimal. The one miss cost a single point.
+
+</details>
+
+## The three topologies
+
+### Solo
+
+One model answers the task directly. No decomposition, no coordination, no overhead. This is the control — it tells you whether coordination actually helps or whether you're just paying for extra calls.
+
+### Hub-Spoke
+
+An orchestrator (Opus 4.5) decomposes the task, assigns subtasks to three GPT-5.2 workers, synthesises their outputs, then one worker red-teams the synthesis and the hub revises. About 7 LLM calls per task.
+
+```
+         ┌─────────┐
+    ┌───►│ Spoke 0 │───┐
+    │    └─────────┘   │
+    │    ┌─────────┐   │    ┌──────────┐    ┌────────┐
+────┼───►│   Hub   │◄──┼───►│Red-team  │───►│Revision│
+    │    └─────────┘   │    └──────────┘    └────────┘
+    │    ┌─────────┐   │
+    └───►│ Spoke 2 │───┘
+         └─────────┘
+```
+
+### Agent Economy
+
+Three models (GPT-5.2, Opus 4.6, GPT-5-mini) compete through [agent-economy](https://github.com/strangeloopcanon/agent-economy)'s clearinghouse. For each task, all three bid; the engine picks a winner based on bid confidence and reputation; the winner produces an answer; an LLM judge verifies it. Reputation develops across the full 9-task session — early failures reduce a model's chances of winning later tasks.
+
+```
+    ┌─────────┐   bid    ┌──────────────┐   assign   ┌────────┐
+    │ GPT-5.2 │─────────►│              │────────────►│ Winner │
+    └─────────┘          │ Clearinghouse│             └───┬────┘
+    ┌─────────┐   bid    │   Engine     │                 │
+    │Opus 4.6 │─────────►│              │    verify       ▼
+    └─────────┘          │  reputation  │◄────────── ┌────────┐
+    ┌─────────┐   bid    │  tracking    │            │ Judge  │
+    │GPT-mini │─────────►│              │            └────────┘
+    └─────────┘          └──────────────┘
+```
+
+In this run, Opus 4.6 won 7 of 9 tasks. GPT-5-mini never won. Reputation at session end: Opus 4.6 = 1.02, GPT-5.2 = 0.72, GPT-5-mini = 1.00.
 
 ## Setup
 
-**Prerequisites:** Python 3.11+, [`uv`](https://docs.astral.sh/uv/) (recommended) or pip.
+Python 3.11+. [`uv`](https://docs.astral.sh/uv/) recommended.
 
 ```bash
-# Clone and install
 git clone https://github.com/strangeloopcanon/hub-vs-spoke.git
 cd hub-vs-spoke
-uv venv .venv && source .venv/bin/activate
 uv pip install -e ".[dev]"
 
-# Set up API keys
 cp .env.example .env
-# Edit .env and add your OPENAI_API_KEY and ANTHROPIC_API_KEY
+# Fill in OPENAI_API_KEY and ANTHROPIC_API_KEY
 ```
 
-The OpenAI and Anthropic SDKs read their API keys directly from `OPENAI_API_KEY` and
-`ANTHROPIC_API_KEY` environment variables. The `.env` file is loaded automatically.
-
-## Running the tests
+## Running
 
 ```bash
-# Unit tests — no API keys, no network, runs in < 1 second
-pytest -m "not live" -v
-
-# Unit tests with coverage report
-pytest -m "not live" --cov=hub_vs_spoke --cov-report=term-missing
-
-# Live integration tests — requires API keys, makes real API calls
-pytest -m live -v
-```
-
-Unit tests use `MockAgent` (canned responses, no network) and cover the full topology
-pipeline, budget enforcement, error injection / fault tolerance, evaluation logic, and
-task registry. Live tests run a simple multiplication task through both topologies with
-real models and assert the correct answer appears.
-
-## Running the benchmark
-
-```bash
-# Full matrix: 5 configs × 17 tasks × 1 rep = 85 runs
-python scripts/run_benchmark.py
-
-# Preview what would run without calling any APIs
+# Preview the matrix without calling any APIs
 python scripts/run_benchmark.py --dry-run
 
+# Full run: 3 conditions × 9 tasks + shadow counterfactuals
+python scripts/run_benchmark.py --output results/yolo_run.jsonl
+
+# Analyse results
+python scripts/analyse_results.py results/yolo_run.jsonl --csv results/summary.csv
+
+# Unit tests (no API keys needed)
+pytest tests/unit/ -v
+```
+
+<details>
+<summary>CLI options</summary>
+
+```bash
 # Single category
 python scripts/run_benchmark.py --category coding
 
 # Single config
-python scripts/run_benchmark.py --config gpt-peers
+python scripts/run_benchmark.py --config agent-economy
 
-# More repetitions for statistical robustness
-python scripts/run_benchmark.py --reps 5
+# Multiple reps
+python scripts/run_benchmark.py --reps 3
 
-# Adjust budget per run
+# Adjust budget
 python scripts/run_benchmark.py --budget-tokens 30000 --budget-turns 20
-
-# Custom output path
-python scripts/run_benchmark.py --output results/run1.jsonl
 ```
 
-Results are written as one JSON object per line to `benchmark_results.jsonl` (or your
-`--output` path). Each line contains:
+</details>
 
-```json
-{
-  "config_label": "claude-hub+gpt-spokes",
-  "topology_type": "hub-spoke",
-  "hub_model": "claude-sonnet-4-20250514",
-  "spoke_models": ["gpt-4o-mini", "gpt-4o-mini", "gpt-4o-mini"],
-  "category": "coding",
-  "task_id": "coding-001",
-  "repetition": 0,
-  "success": true,
-  "total_tokens": 3847,
-  "total_cost_usd": 0.0,
-  "wall_time_ms": 4210.3,
-  "num_turns": 5,
-  "num_errors": 0,
-  "errors": [],
-  "answer_length": 512
-}
-```
+## Caveats
 
-A summary table is printed to stdout after the run completes.
+Nine tasks is a pilot. Bootstrap 95% CIs: market [8.0, 9.4], solo [5.1, 8.9], hub-spoke [4.8, 9.1]. The intervals overlap — this is directional evidence, not proof. The judge (GPT-5.2) also participates as a market worker. The market's dominance partly reflects Opus 4.6 winning most bids — a task set requiring genuine specialisation could shift things.
 
-## Project structure
+## Next steps
+
+These are concrete things to do next, roughly in priority order. Each is self-contained — pick one and run with it.
+
+1. **Statistical power.** Run 3–5 reps of the current setup. With 27–45 observations per condition instead of 9, the bootstrap CIs tighten enough to make real claims. Cost: ~$5–10. Change `--reps 3` and go.
+
+2. **Judge independence.** GPT-5.2 currently serves as both a market worker and the evaluation judge. Replace the judge with a model that doesn't participate (e.g. Claude Sonnet 4.5 or a separate GPT-5.2 instance with a different system prompt). Then check whether scores change — if they do, we had a bias.
+
+3. **Harder tasks.** The current 9 tasks are medium-to-hard but the market scored 7+ on all of them. Add tasks where single models reliably fail: multi-step code generation with test suites, long-context synthesis (10k+ word inputs), or tasks requiring domain knowledge that varies by model. The interesting question is whether the market routes hard tasks better than easy ones.
+
+4. **Structured bids.** Right now agent-economy's bidder generates a single confidence score. Extend it to structured bids: `{p_success, expected_tokens, plan, risks}`. Then track calibration — does stated confidence predict actual performance? This is the data needed to know if market-based routing can be trusted.
+
+5. **Longer sessions.** Run 30–50 tasks in one market session instead of 9. The reputation mechanism is the market's main advantage over simple routing, but 9 tasks barely exercises it. With 50 tasks, you can plot reputation trajectory over time and see whether it converges to something meaningful.
+
+6. **Cost-optimised routing.** Add a condition where the market uses a cost-aware scoring function: `score = quality / cost` instead of pure quality. See if this routes cheap tasks to GPT-5-mini (which currently never wins) while preserving quality on hard tasks.
+
+<details>
+<summary>Project structure</summary>
 
 ```
 src/hub_vs_spoke/
-├── types.py               Core data models (Message, Usage, Turn, TopologyResult, etc.)
-├── config.py              Settings via pydantic-settings (.env + env vars)
+├── types.py                Core data models (Message, Usage, Turn, TopologyResult)
+├── config.py               Settings via pydantic-settings (.env)
 ├── providers/
-│   ├── base.py            LLMProvider protocol (interface)
-│   ├── openai_provider.py OpenAI chat completions wrapper
-│   └── anthropic_provider.py  Anthropic messages wrapper
+│   ├── base.py             LLMProvider protocol
+│   ├── openai_provider.py  OpenAI chat completions
+│   └── anthropic_provider.py  Anthropic messages
 ├── agents/
-│   ├── agent.py           Agent: wraps a provider with history + cost tracking
-│   └── mock_agent.py      MockAgent: deterministic stub for tests
+│   ├── agent.py            Agent: provider + history + cost tracking
+│   └── mock_agent.py       MockAgent for tests (no network)
 ├── topologies/
-│   ├── base.py            Topology protocol (interface)
-│   ├── _shared.py         Shared logic: subtask parsing, retry, result building
-│   ├── hub_spoke.py       Hub-and-spoke implementation
-│   └── spoke_spoke.py     Spoke-and-spoke implementation
+│   ├── base.py             Topology protocol
+│   ├── _shared.py          Subtask parsing, retry logic, result building
+│   ├── hub_spoke.py        Hub-and-spoke + red-team review
+│   ├── solo.py             Solo baseline
+│   └── market.py           Agent-economy clearinghouse wrapper
 ├── tasks/
-│   ├── base.py            Task model, TaskRegistry, evaluation method enum
-│   ├── coding.py          4 coding benchmark tasks
-│   ├── reasoning.py       4 reasoning benchmark tasks
-│   ├── research.py        3 research benchmark tasks
-│   ├── creative.py        3 creative benchmark tasks
-│   └── tool_use.py        3 tool-use benchmark tasks
+│   ├── base.py             Task model, registry, eval methods
+│   ├── coding.py           3 coding tasks (implement, debug, refactor)
+│   ├── reasoning.py        3 reasoning tasks (probability, scheduling, causal)
+│   └── synthesis.py        3 synthesis tasks (comparison, debate, multi-audience)
 └── evaluation/
-    ├── judge.py           LLM-as-judge (absolute score + pairwise comparison)
-    ├── deterministic.py   Exact match, regex, code execution, function-call check
-    ├── cost.py            Token-to-USD cost calculation
-    └── reliability.py     Success rate, error rate, topology comparison
-
-tests/
-├── conftest.py            Shared fixtures (mock agents, sample tasks, budgets)
-├── unit/                  Fast tests, no network
-│   ├── test_agent.py
-│   ├── test_hub_spoke_topology.py
-│   ├── test_spoke_spoke_topology.py
-│   ├── test_evaluation.py
-│   └── test_tasks.py
-└── integration/           Topology pipeline tests (mock + live)
-    ├── conftest.py
-    ├── test_budget_fairness.py
-    ├── test_error_injection.py
-    └── test_hub_vs_spoke_comparison.py
+    ├── judge.py            LLM-as-judge (absolute + pairwise)
+    ├── deterministic.py    Exact match, regex, code execution, function-call check
+    ├── cost.py             Token-to-USD pricing
+    └── reliability.py      Success/error rate scoring
 
 scripts/
-└── run_benchmark.py       CLI benchmark runner
+├── run_benchmark.py        Benchmark runner (solo, hub-spoke, market + shadows)
+└── analyse_results.py      Analysis: calibration, routing accuracy, bootstrap CIs
+
+tests/
+├── unit/                   68 tests, no network, < 2 seconds
+└── integration/            Pipeline + live API tests
 ```
 
-## Adding new tasks
+</details>
 
-Create a task in the relevant category file (e.g. `src/hub_vs_spoke/tasks/coding.py`):
+<details>
+<summary>Adding tasks</summary>
+
+Create a task in the relevant file (e.g. `src/hub_vs_spoke/tasks/coding.py`):
 
 ```python
 Task(
-    task_id="coding-005",
+    task_id="coding-004",
     category=TaskCategory.CODING,
-    prompt="Your task description here.",
-    expected_answer="known answer if applicable",     # or None
-    eval_method=EvalMethod.CODE_EXECUTION,            # or EXACT_MATCH, LLM_JUDGE, etc.
-    eval_rubric="What counts as a good answer.",
-    difficulty="medium",
+    prompt="Your task description.",
+    eval_method=EvalMethod.LLM_JUDGE,
+    eval_rubric="What counts as good. Length alone is not quality.",
+    difficulty="hard",
 )
 ```
 
-Append it to the category's task list and it will automatically register with the
-default registry on import.
+Append it to the category list and it auto-registers on import.
 
-## Adding a new provider
-
-Implement the `LLMProvider` protocol (see `providers/base.py`): a `model_name` property
-and an async `complete()` method that takes a list of `Message` objects and returns an
-`LLMResponse`. Then wire it into the benchmark script's `_make_provider()` function.
-
-## Budget enforcement
-
-Both topologies check a `TokenBudget(max_total_tokens, max_turns)` between steps. When
-the budget is exceeded, the topology stops early and returns whatever partial results it
-has. This keeps live benchmark runs from spiralling in cost. The check happens between
-steps, not mid-step, so a run may slightly overshoot by one step's worth of tokens.
-
-## Fault tolerance testing
-
-The test suite includes a `FaultyAgent` that fails a configurable percentage of calls.
-Tests verify that:
-
-- Hub-spoke recovers from spoke failures (retries, then records error and continues)
-- Hub-spoke treats hub failure as unrecoverable (the orchestrator is the single point of failure)
-- Spoke-spoke tolerates individual peer failures
-- Both topologies still produce a final answer even with partial failures
-- Error counts and messages are accurately recorded
-
-A comparative test runs both topologies five times with 30% failure rates and compares
-their reliability scores.
+</details>
