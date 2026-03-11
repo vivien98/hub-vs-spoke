@@ -97,7 +97,7 @@ def _extract_results_from_ledger(
     reputation_at_completion.
     """
     results: dict[str, dict[str, Any]] = {}
-    bids_by_task: dict[str, list[dict[str, Any]]] = {}
+    bids_by_task: dict[str, dict[str, dict[str, Any]]] = {}
     attempts_by_task: dict[str, int] = {}
 
     for ev in events:
@@ -106,17 +106,31 @@ def _extract_results_from_ledger(
         artifacts = ev.artifacts if hasattr(ev, "artifacts") else ev.get("artifacts", [])
 
         if etype == EventType.BID_SUBMITTED:
-            tid = payload.get("task_id", "")
-            bids_by_task.setdefault(tid, []).append({
-                "worker_id": payload.get("worker_id", ""),
-                "p_success": payload.get("bid", {}).get("self_assessed_p_success", 0.5),
-                "ask": payload.get("bid", {}).get("ask", 0),
-                "eta_minutes": payload.get("bid", {}).get("eta_minutes", 0),
-            })
+            worker_id = payload.get("worker_id", "")
+            for bid in payload.get("bids", []):
+                tid = bid.get("task_id", "")
+                if not tid:
+                    continue
+                bids_by_task.setdefault(tid, {})[worker_id] = {
+                    "worker_id": worker_id,
+                    "p_success": bid.get("self_assessed_p_success", 0.5),
+                    "ask": bid.get("ask", 0),
+                    "eta_minutes": bid.get("eta_minutes", 0),
+                }
 
         elif etype == EventType.TASK_ASSIGNED:
             tid = payload.get("task_id", "")
-            results.setdefault(tid, {})["winner"] = payload.get("worker_id", "")
+            result = results.setdefault(tid, {})
+            winner = payload.get("worker_id", "")
+            result["winner"] = winner
+            assigned_bid = payload.get("bid", {})
+            if isinstance(assigned_bid, dict) and winner:
+                result["winning_bid"] = {
+                    "worker_id": winner,
+                    "p_success": assigned_bid.get("self_assessed_p_success", 0.5),
+                    "ask": assigned_bid.get("ask", 0),
+                    "eta_minutes": assigned_bid.get("eta_minutes", 0),
+                }
 
         elif etype == EventType.PATCH_SUBMITTED:
             tid = payload.get("task_id", "")
@@ -150,7 +164,18 @@ def _extract_results_from_ledger(
 
     # Attach bids and attempts
     for tid, data in results.items():
-        data["bids"] = bids_by_task.get(tid, [])
+        task_bids = list(bids_by_task.get(tid, {}).values())
+        winning_bid = data.get("winning_bid")
+        if (
+            winning_bid
+            and isinstance(winning_bid, dict)
+            and not any(
+                bid.get("worker_id") == winning_bid.get("worker_id")
+                for bid in task_bids
+            )
+        ):
+            task_bids.append(winning_bid)
+        data["bids"] = task_bids
         data["attempts"] = attempts_by_task.get(tid, 0)
 
     return results

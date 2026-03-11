@@ -1,4 +1,4 @@
-"""Integration tests: verify budget constraints hold for both topologies.
+"""Integration tests: verify budget constraints hold for hub-spoke and the legacy mesh.
 
 These tests use mock agents (no network) but are "integration" in the sense
 that they test the full topology pipeline against budget invariants.

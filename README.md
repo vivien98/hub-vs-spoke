@@ -196,6 +196,8 @@ graph LR
 
 The analogy to labour markets is deliberate. Each task is a contract. Models bid for work. The clearinghouse clears the market by matching tasks to bidders weighted by a quality signal (reputation). Poor performers lose future bids — not through explicit punishment but because their reputation-adjusted bids become uncompetitive. The difference from a real market: there's no actual price — "cost" is the token spend, and "price" is the model's confidence that it can succeed.
 
+There is also a legacy `spoke_spoke` peer-mesh implementation still in the codebase from an earlier iteration of the project. It is kept for comparison and regression tests, but it is not part of the current published benchmark matrix.
+
 ### Evaluation
 
 Every answer is scored 0-10 by an LLM judge (GPT-5.2) using a rubric specific to each task. The rubric defines what a good answer looks like, what common mistakes to penalise, and includes an anti-verbosity clause ("length alone is not quality"). One task (reasoning-001, combinatorial probability) uses exact-match grading instead — the answer is either 10/33 or it isn't. "Pass" means score >= 7.
@@ -303,7 +305,8 @@ src/hub_vs_spoke/
 │   ├── _shared.py           Subtask parsing, retry logic, result building
 │   ├── hub_spoke.py         Hierarchical coordination + red-team step
 │   ├── solo.py              Single-model baseline
-│   └── market.py            agent-economy clearinghouse wrapper
+│   ├── market.py            agent-economy clearinghouse wrapper
+│   └── spoke_spoke.py       Legacy peer-mesh topology kept for comparison/tests
 ├── tasks/
 │   ├── base.py              Task model, registry, eval methods
 │   ├── coding.py            5 tasks: interval store, debug, refactor, LRU cache, async bugs
@@ -320,7 +323,7 @@ scripts/
 └── analyse_results.py       Bootstrap CIs, routing accuracy, calibration, difficulty breakdown
 
 tests/
-├── unit/                    79 tests, no network, < 3 seconds
+├── unit/                    84 tests, no network, < 3 seconds
 └── integration/             Full pipeline + live API tests
 ```
 

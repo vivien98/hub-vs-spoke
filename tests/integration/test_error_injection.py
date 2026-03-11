@@ -1,4 +1,4 @@
-"""Integration tests: error injection to compare fault tolerance.
+"""Integration tests: error injection for hub-spoke and the legacy peer mesh.
 
 Tests how each topology handles failures — using a FaultyProvider wrapper
 that randomly fails a percentage of calls.

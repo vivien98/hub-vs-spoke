@@ -1,1 +1,1 @@
-"""Hub vs Spoke: LLM topology comparison test harness."""
+"""Benchmark harness for comparing LLM orchestration strategies."""

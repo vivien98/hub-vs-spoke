@@ -1,4 +1,4 @@
-"""Integration tests: head-to-head comparison of hub-spoke vs spoke-spoke.
+"""Integration tests for hub-spoke and the legacy spoke-spoke peer mesh.
 
 These tests make real API calls and are marked with @pytest.mark.live.
 Run with: pytest -m live -v

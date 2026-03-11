@@ -1,6 +1,7 @@
 .venv/
 __pycache__/
 *.pyc
+.DS_Store
 *.egg-info/
 dist/
 build/
@@ -12,3 +13,4 @@ htmlcov/
 *.jsonl
 results/*.jsonl
 .ruff_cache
+uv.lock

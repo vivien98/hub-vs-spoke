@@ -332,7 +332,8 @@ def print_calibration(rows: list[dict[str, Any]]) -> None:
                 )
 
     if not worker_data:
-        print("  No bid data available.")
+        print("  No bid data available in this results file.")
+        print("  Rerun the benchmark with the current code to populate calibration analysis.")
         return
 
     fmt = "{:<20} {:>5} {:>12} {:>12} {:>12}"
