@@ -1,12 +1,17 @@
-# Hub vs Spoke
+# Can agents be orchestrated via futarchy?
 
-If you can call multiple LLMs, is it better to use one strong model, have one orchestrate the others, or let them compete for work? This repo runs all three approaches on the same tasks and tracks what each produces for what it costs.
+> **Fork of [strangeloopcanon/hub-vs-spoke](https://github.com/strangeloopcanon/hub-vs-spoke).**
+> This fork adds a fourth topology — **Futarchy** — based on Hanson's logarithmic market-scoring rule (LMSR). See [Futarchy topology](#futarchy-topology-new) below.
+
+---
+
+If you can call multiple LLMs, is it better to use one strong model, have one orchestrate the others, let them compete for work, or let them *bet on their own probability of success*? This repo runs all four approaches on the same tasks and tracks what each produces for what it costs.
 
 ## Results
 
 The results below are from the 15-task, 3-repetition full run saved in `results/hard_run.jsonl` and `results/hard_summary.csv`.
 
-### Full run (15 tasks, 3 reps, 135 scored runs)
+### Full run (15 tasks, 3 reps, 135 scored runs — original three topologies)
 
 ```mermaid
 xychart-beta
@@ -31,6 +36,8 @@ xychart-beta
 | Hub-Spoke | 6.7 | 67% (30/45) | $5.33 | 1.3 |
 
 The competitive market matched the best single model on quality while costing 21% less than solo in the full run. Hub-spoke cost about 4x more than the market and a little over 3x more than solo for a lower score. Bootstrap 95% CIs on mean score: market [6.1, 8.2], solo [6.3, 8.0], hub-spoke [5.8, 7.5] — the intervals overlap, so the overall averages are not statistically distinguishable. The category-level patterns below are where the real separation lives.
+
+> **Futarchy results**: Pending — run `python scripts/run_benchmark.py --config futarchy` to generate and add them here.
 
 ### When the market wins: reasoning
 
@@ -122,7 +129,7 @@ Most checks showed no regret, but the misses split into two different failure mo
 
 ## How it works
 
-### The three strategies
+### The four strategies
 
 **Solo** — One model (Opus 4.6) answers each task directly. No decomposition, no coordination, no overhead. This is the control condition: it tells you whether coordination helps at all, or whether you're just paying for extra API calls.
 
@@ -162,6 +169,73 @@ The analogy to labour markets is deliberate. Each task is a contract. Models bid
 
 There is also a legacy `spoke_spoke` peer-mesh implementation still in the codebase from an earlier iteration of the project. It is kept for comparison and regression tests, but it is not part of the current published benchmark matrix.
 
+---
+
+### Futarchy topology (new)
+
+**Futarchy** is a governance mechanism proposed by Robin Hanson (2000, 2003): *vote on values, bet on beliefs*. Instead of authority choosing which agent solves a task, a **prediction market** aggregates each agent's private signal about their own probability of success. The market selects the most credible agent; calibration history (Brier score) up-weights well-calibrated agents' future signals.
+
+This implementation follows the formal model in *"Intrafirm Futarchy and Organisational Survival"* (2026), specifically:
+- **Section 4** — LMSR information aggregation (Proposition 4.1, 4.2)
+- **Section 5** — Incentive compatibility and liquidity non-monotonicity (Propositions 5.2, 5.3)
+- **Section 6** — Optimal design with minority-veto clause (Theorem 6.1)
+
+#### Protocol (per task)
+
+```mermaid
+graph LR
+    T[Task] --> S1[Signal: GPT-5.2\np=0.82]
+    T --> S2[Signal: Opus-4.6\np=0.71]
+    T --> S3[Signal: GPT-mini\np=0.44]
+    S1 --> LMSR[LMSR Market\nλ=1.0]
+    S2 --> LMSR
+    S3 --> LMSR
+    LMSR -->|rep-weighted prices| W{Winner?}
+    W -->|highest price| EX[Execute winner]
+    W -->|veto coalition strong?| VT[Execute dissenter]
+    EX --> FA[Final answer]
+    VT --> HUB[Hub synthesis]
+    HUB --> FA
+    FA --> CAL[Calibration probe\nBrier score update]
+    CAL --> REP[Reputation updated\nfor next task]
+```
+
+1. **Signal phase** — each agent receives the task and returns `{self_confidence: float, approach_summary: str}`. Confidence is a stated probability of producing a high-quality answer (≥7/10).
+
+2. **LMSR aggregation** — market prices are computed as a softmax over reputation-weighted confidence divided by the liquidity parameter λ:
+
+   ```
+   effective_i = confidence_i × reputation_i
+   price_i = exp(effective_i / λ) / Σ_j exp(effective_j / λ)
+   ```
+
+   The agent with the highest price wins. λ controls the winner margin: low λ is decisive (manipulation-prone); high λ is conservative (ignores signal differences). Default λ = 1.0, which sits in the manipulation-proof but information-sensitive window identified in Proposition 5.3.
+
+3. **Minority veto** — if one or more non-winners state confidence ≥ 0.55, a dissenting coalition forms. When the coalition meets the minimum size threshold, the strongest dissenter also executes the task (Theorem 6.1's minority-veto clause). The hub synthesises both answers.
+
+4. **Calibration** (in `run_all()` mode) — after each task, the winning agent self-assesses its answer on a 1-10 scale. The Brier score `(predicted_confidence − actual_score/10)²` updates the winner's reputation weight for future tasks:
+
+   ```
+   reputation_new = clip(reputation_old × (1 − 0.20 × brier), 0.4, 2.0)
+   ```
+
+   Well-calibrated agents gain durable influence over the market; poorly-calibrated agents lose it.
+
+#### How futarchy differs from agent-economy
+
+| Dimension | Agent Economy | Futarchy |
+|---|---|---|
+| Selection mechanism | Competitive bid + clearinghouse | LMSR prediction market |
+| Bid content | Confidence + ask price + ETA | Confidence + approach summary |
+| Reputation update | Clearinghouse (win/lose) | Brier score (calibration) |
+| Execution fallback | Judge verifies, retry available | Minority veto → hub synthesis |
+| Market design | External `agent-economy` library | Native LMSR in this repo |
+| Theory basis | Labour market clearing | Hanson futarchy (LMSR, 2003) |
+
+The agent-economy market is better thought of as a *competitive labour market*: workers bid for contracts and reputation tracks who wins. Futarchy is a *prediction market*: agents bet on probabilistic outcomes and reputation tracks who is well-calibrated. The distinction matters when agents have private information about their own capabilities that diverges from their competitive incentive to bid aggressively.
+
+---
+
 ### Evaluation
 
 Every answer is scored 0-10 by an LLM judge (GPT-5.2) using a rubric specific to each task. The rubric defines what a good answer looks like, what common mistakes to penalise, and includes an anti-verbosity clause ("length alone is not quality"). One task (reasoning-001, combinatorial probability) uses exact-match grading instead — the answer is either 10/33 or it isn't. "Pass" means score >= 7.
@@ -193,12 +267,14 @@ In this benchmark, the market behaved less like a perfect specialist router and 
 
 3. **Single task driving reasoning gap.** reasoning-001 (exact-match probability) accounts for a large share of the market's reasoning advantage. It scored 10 where both alternatives scored 0 across all reps. Remove that one task and the reasoning gap narrows considerably.
 
+4. **Futarchy calibration bootstrap.** The self-assessment calibration probe asks the winning agent to score its own answer. This is a noisy proxy for actual quality — agents tend to be overconfident. A better signal would use the external LLM judge as the Brier feedback source. This is a known limitation of the current implementation.
+
 ## Setup
 
 Python 3.11+. [`uv`](https://docs.astral.sh/uv/) recommended.
 
 ```bash
-git clone https://github.com/strangeloopcanon/hub-vs-spoke.git
+git clone https://github.com/vivien98/hub-vs-spoke.git
 cd hub-vs-spoke
 uv pip install -e ".[dev]"
 
@@ -206,13 +282,15 @@ cp .env.example .env
 # Fill in OPENAI_API_KEY and ANTHROPIC_API_KEY
 ```
 
+> Original upstream repo: [strangeloopcanon/hub-vs-spoke](https://github.com/strangeloopcanon/hub-vs-spoke)
+
 ## Running
 
 ```bash
 # Preview the full matrix without calling any APIs
 python scripts/run_benchmark.py --dry-run
 
-# Full run (15 tasks x 3 conditions x 3 reps + shadow counterfactuals)
+# Full run (15 tasks x 4 conditions x 3 reps + shadow counterfactuals)
 python scripts/run_benchmark.py --output results/hard_run.jsonl
 
 # Analyse
@@ -241,6 +319,127 @@ python scripts/run_benchmark.py --budget-tokens 30000 --budget-turns 20
 
 </details>
 
+## Testing the Futarchy topology
+
+### Quick smoke test (no API keys)
+
+The futarchy module is fully unit-testable without API calls using `MockAgent`:
+
+```python
+# From the project root
+python -c "
+import asyncio, sys
+sys.path.insert(0, 'src')
+from hub_vs_spoke.agents.mock_agent import MockAgent
+from hub_vs_spoke.topologies.futarchy import FutarchyTopology
+from hub_vs_spoke.tasks.base import Task, TaskCategory, EvalMethod
+from hub_vs_spoke.types import TokenBudget
+
+task = Task(
+    task_id='test-001',
+    category=TaskCategory.CODING,
+    prompt='Write a function that reverses a string.',
+    eval_method=EvalMethod.LLM_JUDGE,
+    eval_rubric='Correct reversal, handles edge cases.',
+)
+budget = TokenBudget(max_total_tokens=10_000, max_turns=10)
+
+# Agents return structured confidence JSON
+agents = {
+    'gpt-5.2': MockAgent('gpt-5.2', responses=[
+        '{\"self_confidence\": 0.85, \"approach_summary\": \"Slice notation s[::-1]\"}',
+        'def reverse(s): return s[::-1]',
+    ]),
+    'claude': MockAgent('claude', responses=[
+        '{\"self_confidence\": 0.70, \"approach_summary\": \"Use reversed()\"}',
+        'def reverse(s): return \"\".join(reversed(s))',
+    ]),
+}
+hub = MockAgent('hub', responses=['Synthesised: def reverse(s): return s[::-1]'])
+
+topology = FutarchyTopology(agents=agents, hub=hub)
+result = asyncio.run(topology.run(task, budget))
+print('Winner:', result.metadata['futarchy_winner'])
+print('Prices:', result.metadata['futarchy_prices'])
+print('Veto triggered:', result.metadata['futarchy_veto_triggered'])
+print('Answer length:', len(result.final_answer))
+"
+```
+
+### Compare futarchy against all other topologies
+
+```bash
+# Run only the futarchy config (fastest way to test it end-to-end)
+python scripts/run_benchmark.py --config futarchy --reps 1 --category reasoning \
+    --output results/futarchy_test.jsonl
+
+# Run all four topologies for comparison (budget reduced for speed)
+python scripts/run_benchmark.py --reps 1 --budget-tokens 20000 --budget-turns 10 \
+    --output results/comparison.jsonl
+
+# Analyse results
+python scripts/analyse_results.py results/comparison.jsonl --csv results/comparison.csv
+```
+
+### Run just the futarchy dry-run to inspect the task matrix
+
+```bash
+python scripts/run_benchmark.py --config futarchy --dry-run
+```
+
+### Examine futarchy-specific metadata in results
+
+After a run, each futarchy JSONL row includes:
+
+```jsonc
+{
+  "config_label": "futarchy",
+  "futarchy_winner": "gpt-5.2",
+  "futarchy_prices": {"gpt-5.2": 0.42, "claude-opus-4-6": 0.34, "gpt-5-mini": 0.24},
+  "futarchy_confidences": {"gpt-5.2": 0.85, "claude-opus-4-6": 0.72, "gpt-5-mini": 0.45},
+  "futarchy_effective_confidences": {"gpt-5.2": 0.87, "claude-opus-4-6": 0.70, "gpt-5-mini": 0.43},
+  "futarchy_reputation": {"gpt-5.2": 1.02, "claude-opus-4-6": 0.98, "gpt-5-mini": 0.96},
+  "futarchy_lambda": 1.0,
+  "futarchy_veto_triggered": false,
+  "futarchy_veto_coalition": [],
+  "futarchy_approach_summaries": {...}
+}
+```
+
+Use `jq` to inspect:
+
+```bash
+# Which agent won most often?
+jq -r 'select(.config_label=="futarchy") | .futarchy_winner' results/comparison.jsonl | sort | uniq -c
+
+# Veto rate
+jq -r 'select(.config_label=="futarchy") | .futarchy_veto_triggered' results/comparison.jsonl | grep -c true
+
+# Confidence vs actual score correlation (how well-calibrated?)
+jq 'select(.config_label=="futarchy") | {winner: .futarchy_winner, conf: .futarchy_confidences[.futarchy_winner], score: .eval_score}' results/comparison.jsonl
+```
+
+### Tune the LMSR parameters
+
+The futarchy topology in `scripts/run_benchmark.py` is built with default `lambda_lmsr=1.0`. To experiment with different liquidity values, edit `_build_futarchy_topology()`:
+
+```python
+return FutarchyTopology(
+    agents=agents,
+    hub=hub,
+    lambda_lmsr=0.5,    # sharper winner selection (more decisive)
+    # lambda_lmsr=2.0,  # flatter prices (less reactive to confidence spread)
+    veto_threshold=0.60, # raise bar for minority-veto coalition
+    veto_min_coalition=2, # require 2 dissenters (stricter veto)
+)
+```
+
+Per Proposition 5.3, the survival-optimal λ lies between:
+- `λ* = max_private_benefit / ln(2)` — below this, manipulation is profitable
+- `λ**` — above this, information acquisition is not worth the cost
+
+For typical LLM tasks, λ ∈ [0.5, 2.0] is a reasonable search range.
+
 ## Next steps
 
 - **Judge independence** — use a non-participant model as judge to check for scoring bias
@@ -249,6 +448,11 @@ python scripts/run_benchmark.py --budget-tokens 30000 --budget-turns 20
 - **Structured bids** — `{confidence, tokens, plan, risks}` instead of a single number; track calibration
 - **Cost-aware scoring** — `quality / cost` in the market engine to route cheap tasks cheaply
 - **Pairwise evaluation** — present two answers anonymously to check if rankings agree with absolute scores
+- **External Brier feedback** — replace self-assessment calibration probe with the LLM judge score to get accurate reputation updates
+- **Cross-agent signals** — let agents estimate each other's P(success) in addition to their own (richer information aggregation)
+- **λ sweep** — run futarchy at λ ∈ {0.25, 0.5, 1.0, 2.0, 4.0} to empirically locate the optimal liquidity window
+
+## Setup
 
 <details>
 <summary>Project structure</summary>
@@ -270,6 +474,7 @@ src/hub_vs_spoke/
 │   ├── hub_spoke.py         Hierarchical coordination + red-team step
 │   ├── solo.py              Single-model baseline
 │   ├── market.py            agent-economy clearinghouse wrapper
+│   ├── futarchy.py          LMSR prediction market + minority veto + Brier reputation
 │   └── spoke_spoke.py       Legacy peer-mesh topology kept for comparison/tests
 ├── tasks/
 │   ├── base.py              Task model, registry, eval methods

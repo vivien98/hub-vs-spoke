@@ -31,6 +31,7 @@ from hub_vs_spoke.providers.anthropic_provider import AnthropicProvider
 from hub_vs_spoke.providers.openai_provider import OpenAIProvider
 from hub_vs_spoke.tasks import TaskCategory, default_registry
 from hub_vs_spoke.tasks.base import EvalMethod, Task
+from hub_vs_spoke.topologies.futarchy import FutarchyTopology
 from hub_vs_spoke.topologies.hub_spoke import HubSpokeTopology
 from hub_vs_spoke.topologies.market import MarketTopology
 from hub_vs_spoke.topologies.solo import SoloTopology
@@ -66,6 +67,10 @@ DEFAULT_CONFIGS: list[TopologyConfig] = [
     ),
     TopologyConfig(
         "agent-economy", "market", None,
+        ["gpt-5.2", "claude-opus-4-6", "gpt-5-mini"],
+    ),
+    TopologyConfig(
+        "futarchy", "futarchy", "claude-opus-4-6",
         ["gpt-5.2", "claude-opus-4-6", "gpt-5-mini"],
     ),
 ]
@@ -117,6 +122,34 @@ def _build_topology(config: TopologyConfig) -> SoloTopology | HubSpokeTopology:
         return HubSpokeTopology(hub=hub, spokes=spokes)
 
     raise ValueError(f"Cannot build per-task topology for type={config.topology_type!r}")
+
+
+def _build_futarchy_topology(config: TopologyConfig) -> FutarchyTopology:
+    """Build a FutarchyTopology from config."""
+    if not config.hub_model:
+        raise ValueError("Futarchy topology requires a hub_model for synthesis")
+
+    hub = Agent(
+        name="futarchy-hub",
+        provider=_make_provider(config.hub_model),
+        system_prompt=(
+            "You are a synthesis arbitrator in a prediction market. "
+            "When two agents disagree, merge their answers into the strongest response."
+        ),
+        max_tokens=1024,
+    )
+    agents: dict[str, Any] = {}
+    for model in config.spoke_models:
+        agents[model] = Agent(
+            name=model,
+            provider=_make_provider(model),
+            system_prompt=(
+                "You are a specialist agent participating in a prediction market. "
+                "Estimate your confidence accurately — calibration improves your future reputation."
+            ),
+            max_tokens=1536,
+        )
+    return FutarchyTopology(agents=agents, hub=hub, lambda_lmsr=1.0)
 
 
 def _build_market_topology(config: TopologyConfig) -> MarketTopology:
@@ -275,10 +308,16 @@ def _result_to_jsonl(
         "eval_method": eval_result.get("eval_method", ""),
     }
 
-    # Market-specific metadata
+    # Topology-specific metadata
     if result.metadata:
         for key in ("market_winner", "market_bids", "market_attempts",
                      "market_reputation", "shadow_answers"):
+            if key in result.metadata:
+                row[key] = result.metadata[key]
+        for key in ("futarchy_winner", "futarchy_prices", "futarchy_confidences",
+                     "futarchy_effective_confidences", "futarchy_reputation",
+                     "futarchy_lambda", "futarchy_veto_triggered",
+                     "futarchy_veto_coalition", "futarchy_approach_summaries"):
             if key in result.metadata:
                 row[key] = result.metadata[key]
 
@@ -382,6 +421,14 @@ async def run_benchmark(
             if config.topology_type == "market":
                 # Market: run all tasks in one engine session
                 rows = await _run_market_config(
+                    config, all_tasks, reps, budget, fout,
+                )
+                all_results.extend(rows)
+                total_runs += len(rows)
+                total_errors += sum(1 for r in rows if r.get("num_errors", 0) > 0)
+            elif config.topology_type == "futarchy":
+                # Futarchy: run all tasks in one session for reputation tracking
+                rows = await _run_futarchy_config(
                     config, all_tasks, reps, budget, fout,
                 )
                 all_results.extend(rows)
@@ -497,6 +544,57 @@ async def _run_market_config(
             if task.task_id in shadow_data:
                 result.metadata["shadow_answers"] = shadow_data[task.task_id]
 
+            row = _result_to_jsonl(
+                config, task.category.value, task.task_id, rep,
+                result, eval_result,
+            )
+            fout.write(json.dumps(row) + "\n")
+            fout.flush()
+            rows.append(row)
+
+            label = f"{config.label}/{task.category.value}/{task.task_id}/rep{rep}"
+            _log_run_done(label, result, eval_result)
+
+    return rows
+
+
+async def _run_futarchy_config(
+    config: TopologyConfig,
+    all_tasks: list[Task],
+    reps: int,
+    budget: TokenBudget,
+    fout: Any,
+) -> list[dict[str, Any]]:
+    """Run the futarchy topology: all tasks in one session for reputation tracking."""
+    rows: list[dict[str, Any]] = []
+
+    for rep in range(reps):
+        logger.info("futarchy_session_start", config=config.label, rep=rep)
+        futarchy = _build_futarchy_topology(config)
+
+        try:
+            results = await futarchy.run_all(all_tasks, budget)
+        except Exception as exc:
+            logger.error("futarchy_session_failed", error=str(exc))
+            for task in all_tasks:
+                result = TopologyResult(
+                    topology_name="futarchy",
+                    task_id=task.task_id,
+                    final_answer="",
+                    errors=[str(exc)],
+                )
+                eval_result = await _evaluate(task, "")
+                row = _result_to_jsonl(
+                    config, task.category.value, task.task_id, rep,
+                    result, eval_result,
+                )
+                fout.write(json.dumps(row) + "\n")
+                fout.flush()
+                rows.append(row)
+            continue
+
+        for task, result in zip(all_tasks, results, strict=False):
+            eval_result = await _evaluate(task, result.final_answer)
             row = _result_to_jsonl(
                 config, task.category.value, task.task_id, rep,
                 result, eval_result,
@@ -636,6 +734,8 @@ def main() -> None:
                         label = f"  {config.label} / {cat.value} / {task.task_id}"
                         if config.topology_type == "market":
                             label += " [market-session]"
+                        elif config.topology_type == "futarchy":
+                            label += " [futarchy-session]"
                         if task.task_id in SHADOW_TASK_IDS and config.topology_type == "market":
                             label += " [+shadow]"
                         print(f"{label} / rep{rep}")
