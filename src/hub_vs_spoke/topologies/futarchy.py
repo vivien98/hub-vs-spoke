@@ -204,7 +204,7 @@ class FutarchyTopology:
                     approach_summaries[agent_name] = summary
                     logger.debug("signal", agent=agent_name, confidence=conf)
                 except Exception as exc:
-                    errors.append(f"Signal from {agent_name} failed: {exc}")
+                    # Signal failure is non-fatal: agent sits out this round at 0.5.
                     raw_confidences[agent_name] = 0.5
                     logger.warning("signal_failed", agent=agent_name, error=str(exc))
 
@@ -412,6 +412,12 @@ class FutarchyTopology:
         results: list[TopologyResult] = []
 
         for task in tasks:
+            # Reset conversation history between tasks so accumulated context doesn't
+            # blow the per-task token budget. Reputation is tracked in _reputation, not history.
+            for agent in self.agents.values():
+                agent.reset()
+            self.hub.reset()
+
             result = await self.run(task, budget)
 
             winner = result.metadata.get("futarchy_winner", "")

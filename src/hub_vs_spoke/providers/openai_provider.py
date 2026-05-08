@@ -11,6 +11,10 @@ from hub_vs_spoke.types import LLMResponse, Message, Timer, Usage
 
 logger = structlog.get_logger()
 
+# Models that only accept temperature=1.0 (the API default).
+# Sending any other value raises a 400 BadRequestError.
+_TEMPERATURE_LOCKED_PREFIXES = ("gpt-5-mini", "o1-mini", "o3-mini", "o4-mini", "o1", "o3")
+
 
 class OpenAIProvider:
     """Wraps the OpenAI chat completions API into the LLMProvider protocol."""
@@ -22,6 +26,9 @@ class OpenAIProvider:
     @property
     def model_name(self) -> str:
         return self._model
+
+    def _temperature_locked(self) -> bool:
+        return any(self._model.startswith(p) for p in _TEMPERATURE_LOCKED_PREFIXES)
 
     async def complete(
         self,
@@ -36,14 +43,17 @@ class OpenAIProvider:
             for m in messages
         ]
 
+        create_kwargs: dict[str, Any] = {
+            "model": self._model,
+            "messages": oai_messages,  # type: ignore[arg-type]
+            "max_completion_tokens": max_tokens,
+            **kwargs,
+        }
+        if not self._temperature_locked():
+            create_kwargs["temperature"] = temperature
+
         with Timer() as t:
-            response = await self._client.chat.completions.create(
-                model=self._model,
-                messages=oai_messages,  # type: ignore[arg-type]
-                temperature=temperature,
-                max_completion_tokens=max_tokens,
-                **kwargs,
-            )
+            response = await self._client.chat.completions.create(**create_kwargs)
 
         choice = response.choices[0]
         usage = response.usage

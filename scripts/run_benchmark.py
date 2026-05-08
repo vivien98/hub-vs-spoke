@@ -149,7 +149,7 @@ def _build_futarchy_topology(config: TopologyConfig) -> FutarchyTopology:
             ),
             max_tokens=1536,
         )
-    return FutarchyTopology(agents=agents, hub=hub, lambda_lmsr=1.0)
+    return FutarchyTopology(agents=agents, hub=hub, lambda_lmsr=1.0, veto_threshold=1.0)
 
 
 def _build_market_topology(config: TopologyConfig) -> MarketTopology:

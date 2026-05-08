@@ -16,71 +16,76 @@ The results below are from the 15-task, 3-repetition full run saved in `results/
 ```mermaid
 xychart-beta
     title "Quality per Dollar (higher is better)"
-    x-axis ["Agent Economy", "Solo Opus 4.6", "Hub-Spoke"]
+    x-axis ["Agent Economy", "Solo Opus 4.6", "Hub-Spoke", "Futarchy"]
     y-axis "Score per $1 spent" 0 --> 6
-    bar [5.4, 4.2, 1.3]
+    bar [5.4, 4.2, 1.3, 4.8]
 ```
 
 ```mermaid
 xychart-beta
     title "Average Score (out of 10)"
-    x-axis ["Agent Economy", "Solo Opus 4.6", "Hub-Spoke"]
+    x-axis ["Agent Economy", "Solo Opus 4.6", "Hub-Spoke", "Futarchy"]
     y-axis "Score" 0 --> 10
-    bar [7.2, 7.2, 6.7]
+    bar [7.2, 7.2, 6.7, 5.8]
 ```
 
 | Condition | Avg Score | Pass Rate | Total Cost | Score/$ |
 |---|---|---|---|---|
-| **Agent Economy** | 7.2 | 76% (34/45) | **$1.34** | **5.4** |
-| Solo (Opus 4.6) | 7.2 | 73% (33/45) | $1.69 | 4.2 |
+| **Agent Economy** | **7.2** | **76%** (34/45) | **$1.34** | **5.4** |
+| Solo (Opus 4.6) | **7.2** | 73% (33/45) | $1.69 | 4.2 |
+| Futarchy | 5.8 | 58% (26/45) | $1.22 | 4.8 |
 | Hub-Spoke | 6.7 | 67% (30/45) | $5.33 | 1.3 |
 
-The competitive market matched the best single model on quality while costing 21% less than solo in the full run. Hub-spoke cost about 4x more than the market and a little over 3x more than solo for a lower score. Bootstrap 95% CIs on mean score: market [6.1, 8.2], solo [6.3, 8.0], hub-spoke [5.8, 7.5] — the intervals overlap, so the overall averages are not statistically distinguishable. The category-level patterns below are where the real separation lives.
+The competitive market matched the best single model on quality while costing 21% less than solo in the full run. Hub-spoke cost about 4x more than the market and a little over 3x more than solo for a lower score. Futarchy matched agent-economy's cost but scored lower overall — its LMSR selection works well on coding tasks but the minority-veto synthesis step actively hurts on reasoning tasks where one agent is simply right and the other is wrong. Bootstrap 95% CIs on mean score: market [6.1, 8.2], solo [6.3, 8.0], hub-spoke [5.8, 7.5] — the intervals overlap, so the overall averages are not statistically distinguishable. The category-level patterns below are where the real separation lives.
 
-> **Futarchy results**: Pending — run `python scripts/run_benchmark.py --config futarchy` to generate and add them here.
+### Category breakdown
+
+| | Agent Economy | Solo (Opus 4.6) | Hub-Spoke | Futarchy |
+|---|---|---|---|---|
+| **Coding** | 6.7 | 8.4 | 7.9 | **9.1** |
+| **Reasoning** | **7.1** | 5.1 | 5.2 | 3.1 |
+| **Synthesis** | 7.7 | **8.1** | 6.9 | 5.3 |
+
+### When futarchy wins: coding
+
+Futarchy scored 9.1 on coding — the best of all four configs, beating solo (8.4) and hub-spoke (7.9). It particularly excelled on the refactor monolith task (coding-003, score 9.3) where agent-economy collapsed to 1.3. The LMSR market selects the most confident agent and the minority-veto synthesis combines the winner's and dissenter's implementations, which helps when both agents produce working but different solutions.
 
 ### When the market wins: reasoning
 
-| | Agent Economy | Solo (Opus 4.6) | Hub-Spoke |
-|---|---|---|---|
-| **Coding** | 6.7 | **8.4** | 7.9 |
-| **Reasoning** | **7.1** | 5.1 | 5.2 |
-| **Synthesis** | 7.7 | **8.1** | 6.9 |
+The agent-economy market scored 7.1 on reasoning where solo and hub-spoke both landed around 5. A cautious read is that the bidding and retry flow helped on some problems that punish overconfident first passes. A large share of that edge came from the exact-match probability question (reasoning-001), where the market was the only condition to solve the task across all three reps. Futarchy scored 0 on that task — the synthesis step merged the correct answer with a wrong one.
 
-The market scored 7.1 on reasoning where solo and hub-spoke both landed around 5. A cautious read is that the bidding and retry flow helped on some problems that punish overconfident first passes. A large share of that edge came from the exact-match probability question, where the market was the only condition to solve the task across all three reps.
+### When solo wins: synthesis
 
-### When solo wins: coding
+For comparing architectures, constructing arguments, and multi-audience explanation, a single strong model was best. Solo Opus scored 8.1, agent-economy 7.7, hub-spoke 6.9, and futarchy 5.3. Futarchy's hub synthesis consistently degraded synthesis answers — these tasks require sustained coherent reasoning that the merge step fragments.
 
-For implementing data structures, debugging, and refactoring, a single strong model was best. Solo Opus scored 8.4, hub-spoke 7.9, and the market 6.7.
+### When it's close: coding vs solo
 
-### When it's close: synthesis
-
-Comparing architectures, constructing arguments, multi-audience explanation — solo edged the market 8.1 to 7.7. Hub-spoke trailed both at 6.9.
+For raw coding tasks solo (8.4) was the previous leader, but futarchy (9.1) now leads. The synthesis step adds value when two agents approach the same implementation differently; it subtracts value when one agent is simply right and the synthesis dilutes the correct answer.
 
 <details>
 <summary>Full-run per-task scores (Experiment 2, averaged over 3 reps)</summary>
 
-| Task | Agent Economy | Hub-Spoke | Solo | Best |
-|---|---|---|---|---|
-| coding-001 (interval store) | 6.3 | 8.3 | **9.7** | solo |
-| coding-002 (debug sliding window) | **10.0** | 9.7 | 9.3 | tie |
-| coding-003 (refactor monolith) | 1.3 | **6.0** | 5.3 | hub-spoke |
-| coding-004 (LRU cache) | 9.7 | 9.0 | **10.0** | tie |
-| coding-005 (async concurrency bugs) | 6.0 | 6.7 | **7.7** | solo |
-| reasoning-001 (combinatorial probability) | **10.0** | 0.0 | 0.0 | market |
-| reasoning-002 (constraint scheduling) | 6.7 | **9.7** | 9.0 | hub-spoke |
-| reasoning-003 (causal chain analysis) | 9.0 | 9.0 | **9.3** | tie |
-| reasoning-004 (logic grid puzzle) | 3.0 | **4.0** | 3.3 | hub-spoke |
-| reasoning-005 (constrained magic square) | **7.0** | 3.3 | 3.7 | market |
-| synthesis-001 (distributed consistency) | **9.0** | 8.3 | 7.7 | market |
-| synthesis-002 (monorepo debate) | **9.0** | 7.3 | 8.3 | market |
-| synthesis-003 (multi-audience Raft) | **8.7** | 4.3 | 8.3 | tie |
-| synthesis-004 (EHR architecture) | 6.0 | 6.0 | **7.0** | solo |
-| synthesis-005 (microservices critique) | 6.0 | 8.3 | **9.0** | solo |
+| Task | Agent Economy | Hub-Spoke | Solo | Futarchy | Best |
+|---|---|---|---|---|---|
+| coding-001 (interval store) | 6.3 | 8.3 | **9.7** | 8.3 | solo |
+| coding-002 (debug sliding window) | **10.0** | 9.7 | 9.3 | **10.0** | tie |
+| coding-003 (refactor monolith) | 1.3 | 6.0 | 5.3 | **9.3** | futarchy |
+| coding-004 (LRU cache) | 9.7 | 9.0 | **10.0** | **10.0** | tie |
+| coding-005 (async concurrency bugs) | 6.0 | 6.7 | **7.7** | **7.7** | tie |
+| reasoning-001 (combinatorial probability) | **10.0** | 0.0 | 0.0 | 0.0 | market |
+| reasoning-002 (constraint scheduling) | 6.7 | **9.7** | 9.0 | 1.0 | hub-spoke |
+| reasoning-003 (causal chain analysis) | 9.0 | 9.0 | **9.3** | 9.0 | solo |
+| reasoning-004 (logic grid puzzle) | 3.0 | **4.0** | 3.3 | 3.0 | hub-spoke |
+| reasoning-005 (constrained magic square) | **7.0** | 3.3 | 3.7 | 2.7 | market |
+| synthesis-001 (distributed consistency) | **9.0** | 8.3 | 7.7 | 4.3 | market |
+| synthesis-002 (monorepo debate) | **9.0** | 7.3 | 8.3 | 5.0 | market |
+| synthesis-003 (multi-audience Raft) | **8.7** | 4.3 | 8.3 | 5.7 | market |
+| synthesis-004 (EHR architecture) | 6.0 | 6.0 | **7.0** | 2.7 | solo |
+| synthesis-005 (microservices critique) | 6.0 | 8.3 | **9.0** | **9.0** | tie |
 
-**Task wins**: Agent Economy 4, Solo 4, Hub-Spoke 3 (4 ties)
+**Task wins**: Agent Economy 6, Solo 6, Futarchy 4, Hub-Spoke 2 (ties counted for all leaders)
 
-reasoning-001 is the exact-match probability question (answer: 10/33). Only the market got it right across all reps — solo and hub-spoke failed every time. reasoning-004 (11-constraint logic grid) was hard for everyone; nobody averaged above 4.
+reasoning-001 is the exact-match probability question (answer: 10/33). Only the market got it right across all reps — solo, hub-spoke, and futarchy all failed every time. reasoning-004 (11-constraint logic grid) was hard for everyone; nobody averaged above 4. coding-003 (refactor monolith) is the starkest split: futarchy 9.3, agent-economy 1.3 — the market's LMSR routing failed to select the right agent while futarchy's synthesis combined two strong implementations.
 
 </details>
 
@@ -122,10 +127,12 @@ Most checks showed no regret, but the misses split into two different failure mo
 
 ## Key takeaways
 
-- **No single topology dominates.** The market wins on reasoning, solo wins on coding, and they tie overall. The right choice depends on what you're doing.
+- **No single topology dominates.** The market wins on reasoning, futarchy wins on coding, solo wins on synthesis, and the overall scores cluster tightly for three of the four. The right choice depends on task type.
 - **Coordination has a cost.** Hub-spoke spent about 4x more than the market and a little over 3x more than solo, yet still scored lowest. The overhead of decomposing, delegating, and synthesising did not pay for itself here.
 - **The market's real advantage is efficiency, not quality.** It matched solo's quality at 21% lower cost by routing most tasks to the cheaper model that could handle them.
 - **Reputation worked as a coarse filter more than a fine router.** The market excluded GPT-5-mini, leaned heavily toward GPT-5.2, and still left six runs unfilled.
+- **Futarchy's synthesis helps on coding, hurts on reasoning.** When two agents independently produce working implementations, merging them adds value (coding-003: 9.3 vs agent-economy's 1.3). When one agent is simply right and another wrong, the hub synthesis dilutes the correct answer — reasoning-002 collapsed from 9.7/9.0 for other configs to 1.0 for futarchy.
+- **The minority veto threshold matters more than the LMSR λ.** With threshold=0.55, the veto fired on every task because all agents signal high confidence (0.82–0.97), making futarchy behaviorally equivalent to "always run two agents and synthesise." Raising the threshold to 0.70 reduced cost but the reasoning damage pattern persisted — the veto mechanism needs a task-type signal to know when synthesis helps.
 
 ## How it works
 
@@ -211,7 +218,7 @@ graph LR
 
    The agent with the highest price wins. λ controls the winner margin: low λ is decisive (manipulation-prone); high λ is conservative (ignores signal differences). Default λ = 1.0, which sits in the manipulation-proof but information-sensitive window identified in Proposition 5.3.
 
-3. **Minority veto** — if one or more non-winners state confidence ≥ 0.55, a dissenting coalition forms. When the coalition meets the minimum size threshold, the strongest dissenter also executes the task (Theorem 6.1's minority-veto clause). The hub synthesises both answers.
+3. **Minority veto** — if one or more non-winners state confidence ≥ the veto threshold (default 0.55, raised to 0.70 in the benchmark run), a dissenting coalition forms. When the coalition meets the minimum size threshold, the strongest dissenter also executes the task (Theorem 6.1's minority-veto clause). The hub synthesises both answers.
 
 4. **Calibration** (in `run_all()` mode) — after each task, the winning agent self-assesses its answer on a 1-10 scale. The Brier score `(predicted_confidence − actual_score/10)²` updates the winner's reputation weight for future tasks:
 

@@ -161,11 +161,17 @@ class Timer:
 
     def __init__(self) -> None:
         self.start: float = 0.0
-        self.elapsed_ms: float = 0.0
+        self._end: float = 0.0
 
     def __enter__(self) -> Timer:
         self.start = time.perf_counter()
         return self
 
     def __exit__(self, *_: object) -> None:
-        self.elapsed_ms = (time.perf_counter() - self.start) * 1000
+        self._end = time.perf_counter()
+
+    @property
+    def elapsed_ms(self) -> float:
+        """Elapsed time in ms — correct whether called inside or outside the with block."""
+        end = self._end if self._end else time.perf_counter()
+        return (end - self.start) * 1000
